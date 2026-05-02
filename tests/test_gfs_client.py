@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import httpx
 
@@ -182,7 +183,7 @@ class GfsForecastProviderClientUnitTests(unittest.TestCase):
 
         # Stub recorded the bbox subregion params verbatim.
         f006_call = next(call for call in stub.calls if call["forecast_hour"] == 6)
-        params = f006_call["params"]
+        params = cast(dict[str, str], f006_call["params"])
         self.assertEqual(params.get("var_APCP"), "on")
         self.assertEqual(params.get("subregion"), "")
         self.assertEqual(params.get("leftlon"), "100.15")
@@ -191,7 +192,7 @@ class GfsForecastProviderClientUnitTests(unittest.TestCase):
         self.assertEqual(params.get("bottomlat"), "6.55")
 
     def test_discover_latest_run_picks_most_recent_published_cycle(self) -> None:
-        stub, factory = _client_factory_from({6: F006_BYTES, 12: F012_BYTES})
+        _, factory = _client_factory_from({6: F006_BYTES, 12: F012_BYTES})
         client = GfsForecastProviderClient(
             forecast_hours=(6, 12),
             bbox=PHASE1_BBOX,

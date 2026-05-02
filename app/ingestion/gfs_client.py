@@ -20,6 +20,7 @@ import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Protocol, cast
 
 import eccodes
 import httpx
@@ -309,6 +310,63 @@ class DecodedApcpMessage:
     units: str
 
 
+class _EccodesMessage(Protocol):
+    """Minimal typed view of an eccodes message used by this module.
+
+    The real ``eccodes`` Python binding exposes ``get`` and ``get_array`` whose
+    return types depend on the requested key, so the stubs report ``object``.
+    Wrapping the calls in this protocol plus the narrow ``_get_*`` helpers
+    below keeps the cast to a concrete type confined to the eccodes boundary.
+    """
+
+    def get(self, key: str) -> object: ...
+
+    def get_array(self, key: str) -> object: ...
+
+
+def _get_int(message: _EccodesMessage, key: str) -> int:
+    """Return ``message[key]`` as an ``int`` at the eccodes boundary."""
+    return int(cast(int, message.get(key)))
+
+
+def _get_float(message: _EccodesMessage, key: str) -> float:
+    """Return ``message[key]`` as a ``float`` at the eccodes boundary."""
+    return float(cast(float, message.get(key)))
+
+
+def _get_str(message: _EccodesMessage, key: str) -> str:
+    """Return ``message[key]`` as a ``str`` at the eccodes boundary."""
+    return str(message.get(key))
+
+
+def _get_float_list(message: _EccodesMessage, key: str) -> list[float]:
+    """Return ``message[key]`` as a ``list[float]`` at the eccodes boundary.
+
+    The real binding returns a NumPy array exposing ``.tolist()``; we cast to
+    a small protocol so the call site stays precisely typed without pulling
+    NumPy into the type surface.
+    """
+
+    class _SupportsTolist(Protocol):
+        def tolist(self) -> list[float]: ...
+
+    return cast(_SupportsTolist, message.get_array(key)).tolist()
+
+
+@dataclass(frozen=True)
+class _ApcpCandidate:
+    """Typed view of one APCP accumulation message picked from a GRIB2 file."""
+
+    start_step: int
+    end_step: int
+    step_range: str
+    ni: int
+    nj: int
+    resolution: float
+    units: str
+    values: list[float]
+
+
 def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMessage:
     """Pick the interval-accumulation APCP message that matches ``forecast_hour``.
 
@@ -321,32 +379,31 @@ def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMes
     ``providerAccumulationSemantics`` so downstream totals never silently mix
     incompatible accumulation periods.
     """
-    candidates: list[dict[str, object]] = []
+    candidates: list[_ApcpCandidate] = []
     with eccodes.MemoryReader(grib_bytes) as reader:
-        for message in reader:
-            short_name = str(message.get("shortName"))
-            step_type = str(message.get("stepType"))
+        for raw_message in reader:
+            message = cast(_EccodesMessage, raw_message)
+            short_name = _get_str(message, "shortName")
+            step_type = _get_str(message, "stepType")
             if short_name not in {"tp", "APCP"}:
                 continue
             if step_type != "accum":
                 continue
-            start_step = int(message.get("startStep"))
-            end_step = int(message.get("endStep"))
+            start_step = _get_int(message, "startStep")
+            end_step = _get_int(message, "endStep")
             if end_step != forecast_hour:
                 continue
             candidates.append(
-                {
-                    "start_step": start_step,
-                    "end_step": end_step,
-                    "step_range": str(message.get("stepRange")),
-                    "ni": int(message.get("Ni")),
-                    "nj": int(message.get("Nj")),
-                    "resolution": float(
-                        message.get("iDirectionIncrementInDegrees")
-                    ),
-                    "units": str(message.get("units")),
-                    "values": message.get_array("values"),
-                }
+                _ApcpCandidate(
+                    start_step=start_step,
+                    end_step=end_step,
+                    step_range=_get_str(message, "stepRange"),
+                    ni=_get_int(message, "Ni"),
+                    nj=_get_int(message, "Nj"),
+                    resolution=_get_float(message, "iDirectionIncrementInDegrees"),
+                    units=_get_str(message, "units"),
+                    values=_get_float_list(message, "values"),
+                )
             )
 
     if not candidates:
@@ -357,14 +414,14 @@ def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMes
     # run-total are present. Then prefer non-zero startStep to avoid the
     # single-message fallback at f006 where 0-6 is the only record.
     candidates.sort(
-        key=lambda message: (
-            int(message["end_step"]) - int(message["start_step"]),
-            -int(message["start_step"]),
+        key=lambda candidate: (
+            candidate.end_step - candidate.start_step,
+            -candidate.start_step,
         )
     )
     chosen = candidates[0]
 
-    units = str(chosen["units"])
+    units = chosen.units
     if units not in {"kg m**-2", "kg m-2", "mm"}:
         msg = (
             "unexpected APCP units; expected kg m**-2 or mm but got "
@@ -372,9 +429,8 @@ def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMes
         )
         raise GfsIngestionError(msg)
 
-    raw_values = chosen["values"]
     # 1 kg/m^2 of liquid water depth = 1 mm; both unit aliases map directly.
-    values_mm = tuple(round(float(value), 4) for value in raw_values.tolist())
+    values_mm = tuple(round(value, 4) for value in chosen.values)
     if any(value < 0 for value in values_mm):
         msg = (
             f"APCP message for f{forecast_hour:03d} contained negative values "
@@ -382,25 +438,25 @@ def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMes
         )
         raise GfsIngestionError(msg)
 
-    accumulation_hours = int(chosen["end_step"]) - int(chosen["start_step"])
+    accumulation_hours = chosen.end_step - chosen.start_step
     if accumulation_hours <= 0:
         msg = (
             f"APCP message for f{forecast_hour:03d} has non-positive accumulation window: "
-            f"{chosen['step_range']}"
+            f"{chosen.step_range}"
         )
         raise GfsIngestionError(msg)
 
     semantics = (
-        f"GFS APCP stepRange={chosen['step_range']} "
-        f"(startStep={chosen['start_step']}, endStep={chosen['end_step']}, "
+        f"GFS APCP stepRange={chosen.step_range} "
+        f"(startStep={chosen.start_step}, endStep={chosen.end_step}, "
         f"units={units})"
     )
 
     return DecodedApcpMessage(
         values_mm=values_mm,
-        width=int(chosen["ni"]),
-        height=int(chosen["nj"]),
-        resolution_degrees=float(chosen["resolution"]),
+        width=chosen.ni,
+        height=chosen.nj,
+        resolution_degrees=chosen.resolution,
         accumulation_hours=accumulation_hours,
         semantics=semantics,
         units=units,
