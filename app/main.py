@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -7,17 +7,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.health import router as health_router
 from app.api.routes import api_router
 from app.core.config import Settings, get_settings
+from app.ingestion.repository import DryRunForecastRepository, ForecastRepository
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Prepare async application resources for future integrations."""
     if not hasattr(app.state, "settings"):
         app.state.settings = get_settings()
+    if not hasattr(app.state, "forecast_repository"):
+        app.state.forecast_repository = DryRunForecastRepository()
     yield
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    forecast_repository: ForecastRepository | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application."""
     resolved_settings = settings or get_settings()
     app = FastAPI(
@@ -29,6 +35,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
+    app.state.forecast_repository = forecast_repository or DryRunForecastRepository()
 
     app.add_middleware(
         CORSMiddleware,
