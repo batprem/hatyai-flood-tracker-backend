@@ -38,9 +38,7 @@ async def run_dry_ingestion(
     retrieved_at = datetime.now(UTC)
 
     for provider in providers:
-        client = build_provider_client(
-            provider, forecast_hours, use_fixtures=use_fixtures
-        )
+        client = build_provider_client(provider, forecast_hours, use_fixtures=use_fixtures)
         run_ref = client.discover_latest_run(retrieved_at)
         artifacts = client.fetch_run(run_ref)
         run = build_run_record(run_ref, artifacts, retrieved_at).model_copy(

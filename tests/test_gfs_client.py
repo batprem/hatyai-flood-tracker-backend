@@ -248,12 +248,8 @@ class GfsForecastProviderClientUnitTests(unittest.TestCase):
         self.assertEqual(f006.window_end, f006.valid_time)
         self.assertEqual(f006.valid_time, run_ref.run_time.replace(hour=6))
         self.assertGreaterEqual(f006.quality.minimum_mm, 0.0)
-        self.assertGreaterEqual(
-            f006.quality.maximum_mm, f006.quality.minimum_mm
-        )
-        self.assertIn(
-            "stepRange=0-6", f006.provider_accumulation_semantics
-        )
+        self.assertGreaterEqual(f006.quality.maximum_mm, f006.quality.minimum_mm)
+        self.assertIn("stepRange=0-6", f006.provider_accumulation_semantics)
         self.assertEqual(f006.source.attribution, "NOAA/NCEP Global Forecast System (GFS)")
         self.assertIn("NOAA", f006.source.license)
 

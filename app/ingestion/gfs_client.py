@@ -192,17 +192,13 @@ class GfsForecastProviderClient:
         for days_back in range(0, 3):
             day = (now - timedelta(days=days_back)).date()
             for cycle_hour in sorted_cycles:
-                run_dt = datetime(
-                    day.year, day.month, day.day, cycle_hour, tzinfo=UTC
-                )
+                run_dt = datetime(day.year, day.month, day.day, cycle_hour, tzinfo=UTC)
                 if run_dt <= now:
                     candidates.append(run_dt)
         candidates.sort(reverse=True)
         return candidates[:RUN_DISCOVERY_LOOKBACK_CYCLES]
 
-    def _run_available(
-        self, client: httpx.Client, run_time: datetime, forecast_hour: int
-    ) -> bool:
+    def _run_available(self, client: httpx.Client, run_time: datetime, forecast_hour: int) -> bool:
         """Return ``True`` if the smallest forecast file for the cycle exists."""
         params = self._filter_params(run_time, forecast_hour)
         url = self.filter_url
@@ -275,9 +271,7 @@ class GfsForecastProviderClient:
     def _filter_params(self, run_time: datetime, forecast_hour: int) -> dict[str, str]:
         params: dict[str, str] = {
             "dir": f"/gfs.{run_time.strftime('%Y%m%d')}/{run_time.strftime('%H')}/atmos",
-            "file": (
-                f"gfs.t{run_time.strftime('%H')}z.pgrb2.0p25.f{forecast_hour:03d}"
-            ),
+            "file": (f"gfs.t{run_time.strftime('%H')}z.pgrb2.0p25.f{forecast_hour:03d}"),
             "var_APCP": "on",
         }
         params.update(self.bbox.as_filter_params())
