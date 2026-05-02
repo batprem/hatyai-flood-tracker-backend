@@ -5,7 +5,9 @@ description = "FastAPI backend for the Hat Yai flood warning app."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "eccodes>=2.47.0",
     "fastapi",
+    "httpx>=0.28.1",
     "pydantic-settings",
     "uvicorn[standard]",
 ]
