@@ -25,6 +25,7 @@ class MapLayer(BaseModel):
     min_zoom: float = Field(ge=0, le=24)
     max_zoom: float = Field(ge=0, le=24)
     source_url: str
+    metadata_fields: list[str] = Field(default_factory=list)
 
 
 class MapLayersResponse(BaseModel):
@@ -52,6 +53,7 @@ class MapLayersResponse(BaseModel):
                         "min_zoom": 8,
                         "max_zoom": 18,
                         "source_url": "/api/stations/water-level",
+                        "metadata_fields": [],
                     }
                 ],
             }

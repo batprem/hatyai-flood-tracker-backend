@@ -3,8 +3,14 @@ from datetime import UTC, datetime, timedelta
 from app.schemas.common import Coordinates, DataFreshness, LocalizedName, RiskLevel
 from app.schemas.forecast import RainfallForecastPoint, RainfallForecastResponse
 from app.schemas.map_layers import MapLayer, MapLayersResponse, MapLayerType
-from app.schemas.risk import CurrentRiskResponse, RiskSignal
+from app.schemas.risk import CurrentRiskResponse
 from app.schemas.stations import WaterLevelResponse, WaterLevelTrend, WaterStationLevel
+from app.services.risk_rules import (
+    RainfallRiskInput,
+    RiskRuleSettings,
+    WaterLevelRiskInput,
+    calculate_current_risk,
+)
 
 MOCK_SOURCE = "phase-1-normalized-mock"
 
@@ -26,7 +32,7 @@ def get_rainfall_forecast() -> RainfallForecastResponse:
             centroid=Coordinates(latitude=7.0084, longitude=100.4747),
             forecast_time=valid_at + timedelta(hours=6),
             lead_time_hours=6,
-            rainfall_mm=34.5,
+            rainfall_mm=72.0,
             accumulation_hours=6,
             risk_level=RiskLevel.YELLOW,
         ),
@@ -34,10 +40,10 @@ def get_rainfall_forecast() -> RainfallForecastResponse:
             basin_id="songkhla-lake-basin",
             basin_name=LocalizedName(th="ลุ่มน้ำทะเลสาบสงขลา", en="Songkhla Lake Basin"),
             centroid=Coordinates(latitude=7.1966, longitude=100.5951),
-            forecast_time=valid_at + timedelta(hours=12),
-            lead_time_hours=12,
-            rainfall_mm=58.2,
-            accumulation_hours=12,
+            forecast_time=valid_at + timedelta(hours=24),
+            lead_time_hours=24,
+            rainfall_mm=142.0,
+            accumulation_hours=24,
             risk_level=RiskLevel.ORANGE,
         ),
     ]
@@ -97,49 +103,42 @@ def get_water_levels() -> WaterLevelResponse:
     )
 
 
-def get_current_risk() -> CurrentRiskResponse:
-    """Return the Phase 1 rule-based mock flood risk summary."""
-    generated_at = utc_now()
-
-    signals = [
-        RiskSignal(
-            name="6-hour rainfall",
-            value="34.5 mm",
-            level=RiskLevel.YELLOW,
-            detail="Rainfall exceeds the Phase 1 watch threshold for U-Tapao Canal.",
-        ),
-        RiskSignal(
-            name="12-hour basin rainfall",
-            value="58.2 mm",
-            level=RiskLevel.ORANGE,
-            detail="Songkhla Lake basin forecast suggests heavier rain bands may develop.",
-        ),
-        RiskSignal(
-            name="U-Tapao Canal level",
-            value="2.4 m and rising",
-            level=RiskLevel.YELLOW,
-            detail="Current mock level remains below warning level but trend is rising.",
-        ),
+def get_current_risk(settings: RiskRuleSettings) -> CurrentRiskResponse:
+    """Calculate the Phase 1 rule-based risk summary from normalized mock inputs."""
+    rainfall = get_rainfall_forecast()
+    water_levels = get_water_levels()
+    forecasts = [
+        RainfallRiskInput(
+            area_id=forecast.basin_id,
+            area_name=forecast.basin_name.en,
+            rainfall_mm=forecast.rainfall_mm,
+            accumulation_hours=forecast.accumulation_hours,
+            source=rainfall.freshness.source,
+            model_run_time=rainfall.freshness.generated_at,
+            valid_time=forecast.forecast_time,
+            retrieved_at=rainfall.freshness.generated_at,
+            is_mock=rainfall.freshness.is_mock,
+        )
+        for forecast in rainfall.forecasts
     ]
-
-    return CurrentRiskResponse(
-        freshness=DataFreshness(
-            generated_at=generated_at,
-            valid_at=generated_at,
-            source=MOCK_SOURCE,
-        ),
-        level=RiskLevel.ORANGE,
-        headline="เฝ้าระวังฝนหนักและระดับน้ำคลองอู่ตะเภา",
-        summary=(
-            "Mock Phase 1 rules indicate elevated flood awareness because basin rainfall is "
-            "increasing while the U-Tapao Canal trend is rising."
-        ),
-        recommended_action=(
-            "Monitor official updates, avoid flood-prone shortcuts, and prepare to move "
-            "belongings from low-lying areas."
-        ),
-        confidence=0.7,
-        signals=signals,
+    stations = [
+        WaterLevelRiskInput(
+            station_id=station.station_id,
+            station_name=station.station_name.en,
+            water_level_m=station.water_level_m,
+            warning_level_m=station.warning_level_m,
+            critical_level_m=station.critical_level_m,
+            observed_at=station.observed_at,
+            source=water_levels.freshness.source,
+            is_mock=water_levels.freshness.is_mock,
+        )
+        for station in water_levels.stations
+    ]
+    return calculate_current_risk(
+        forecasts=forecasts,
+        water_levels=stations,
+        settings=settings,
+        generated_at=max(rainfall.freshness.generated_at, water_levels.freshness.generated_at),
     )
 
 
@@ -171,12 +170,28 @@ def get_map_layers() -> MapLayersResponse:
         MapLayer(
             layer_id="risk-summary",
             title="Current risk summary",
-            description="Rule-based current risk status for public alert display.",
+            description=(
+                "Rule-based current risk status with map-compatible freshness, source, "
+                "uncertainty, and official-warning properties."
+            ),
             layer_type=MapLayerType.POINT,
             visible_by_default=True,
             min_zoom=7,
             max_zoom=18,
             source_url="/api/risk/current",
+            metadata_fields=[
+                "map_properties.area_id",
+                "map_properties.level",
+                "map_properties.score",
+                "map_properties.primary_driver",
+                "map_properties.availability",
+                "map_properties.freshness_status",
+                "map_properties.uncertainty_level",
+                "map_properties.source",
+                "map_properties.model_run_time",
+                "map_properties.latest_source_retrieved_at",
+                "map_properties.is_official_warning",
+            ],
         ),
     ]
 
