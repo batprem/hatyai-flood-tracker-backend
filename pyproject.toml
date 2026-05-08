@@ -8,12 +8,14 @@ dependencies = [
     "eccodes>=2.47.0",
     "fastapi",
     "httpx>=0.28.1",
+    "motor>=3.6.0",
     "pydantic-settings",
     "uvicorn[standard]",
 ]
 
 [dependency-groups]
 dev = [
+    "mongomock-motor>=0.0.34",
     "ruff",
 ]
 

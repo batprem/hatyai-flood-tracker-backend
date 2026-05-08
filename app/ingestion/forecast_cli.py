@@ -4,12 +4,18 @@ import json
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import JsonValue
 
+from app.core.config import ForecastRepositoryBackend, get_settings
 from app.ingestion.models import ForecastProvider, ForecastRunStatus
+from app.ingestion.mongo_repository import build_mongo_repository
 from app.ingestion.normalizer import build_run_record, normalize_frames
 from app.ingestion.providers import build_provider_client
-from app.ingestion.repository import DryRunForecastRepository
+from app.ingestion.repository import (
+    DryRunForecastRepository,
+    ForecastRepository,
+)
 
 
 async def run_dry_ingestion(
@@ -33,6 +39,74 @@ async def run_dry_ingestion(
             available (currently GFS).
     """
     repo = repository if repository is not None else DryRunForecastRepository()
+    runs, frames = await _ingest_into_repository(
+        repo,
+        providers=providers,
+        forecast_hours=forecast_hours,
+        use_fixtures=use_fixtures,
+    )
+
+    payload: dict[str, JsonValue] = {
+        "mode": "dry-run",
+        "runs": runs,
+        "frames": frames,
+        "freshness": to_json_value(await repo.freshness_summary()),
+    }
+    if include_mongo_preview:
+        payload["mongoPreview"] = to_json_value(repo.mongo_preview())
+    return payload
+
+
+async def run_mongo_ingestion(
+    providers: list[ForecastProvider],
+    forecast_hours: list[int],
+    *,
+    mongodb_uri: str,
+    mongodb_database: str,
+    use_fixtures: bool = False,
+) -> dict[str, JsonValue]:
+    """Run ingestion against a MongoDB-backed repository for cron pipelines.
+
+    Args:
+        providers: Providers to ingest in this run.
+        forecast_hours: Forecast hours to request from each provider.
+        mongodb_uri: MongoDB connection URI.
+        mongodb_database: Database name to persist into.
+        use_fixtures: Force fixture-backed clients for every provider so the
+            CLI can run offline.
+    """
+    client = AsyncIOMotorClient(mongodb_uri)
+    try:
+        repository = build_mongo_repository(client, mongodb_database)
+        await repository.ensure_indexes()
+        runs, frames = await _ingest_into_repository(
+            repository,
+            providers=providers,
+            forecast_hours=forecast_hours,
+            use_fixtures=use_fixtures,
+        )
+        freshness = to_json_value(await repository.freshness_summary())
+    finally:
+        client.close()
+
+    payload: dict[str, JsonValue] = {
+        "mode": "mongo",
+        "database": mongodb_database,
+        "runs": runs,
+        "frames": frames,
+        "freshness": freshness,
+    }
+    return payload
+
+
+async def _ingest_into_repository(
+    repository: ForecastRepository,
+    *,
+    providers: list[ForecastProvider],
+    forecast_hours: list[int],
+    use_fixtures: bool,
+) -> tuple[list[JsonValue], list[JsonValue]]:
+    """Ingest each provider's latest run into ``repository`` and return JSON copies."""
     runs: list[JsonValue] = []
     frames: list[JsonValue] = []
     retrieved_at = datetime.now(UTC)
@@ -46,21 +120,13 @@ async def run_dry_ingestion(
         )
         normalized_frames = normalize_frames(run_ref, artifacts, retrieved_at)
 
-        await repo.upsert_run(run)
-        await repo.upsert_frames(normalized_frames)
+        await repository.upsert_run(run)
+        await repository.upsert_frames(normalized_frames)
 
         runs.append(run.model_dump(mode="json", by_alias=True))
         frames.extend(frame.model_dump(mode="json", by_alias=True) for frame in normalized_frames)
 
-    payload: dict[str, JsonValue] = {
-        "mode": "dry-run",
-        "runs": runs,
-        "frames": frames,
-        "freshness": to_json_value(await repo.freshness_summary()),
-    }
-    if include_mongo_preview:
-        payload["mongoPreview"] = to_json_value(repo.mongo_preview())
-    return payload
+    return runs, frames
 
 
 def parse_forecast_hours(value: str) -> list[int]:
@@ -107,7 +173,7 @@ def to_json_value(value: object) -> JsonValue:
 def build_parser() -> argparse.ArgumentParser:
     """Build the forecast ingestion CLI parser."""
     parser = argparse.ArgumentParser(
-        description="Run a small GFS/ECMWF forecast ingestion dry-run without secrets.",
+        description="Run a small GFS/ECMWF forecast ingestion job.",
     )
     parser.add_argument(
         "--provider",
@@ -134,20 +200,44 @@ def build_parser() -> argparse.ArgumentParser:
             "development and CI runs."
         ),
     )
+    parser.add_argument(
+        "--mongo",
+        action="store_true",
+        help=(
+            "Persist runs and frames into the configured MongoDB repository instead "
+            "of running in-memory. Equivalent to HFT_FORECAST_REPOSITORY_BACKEND=mongo."
+        ),
+    )
     return parser
 
 
 def main() -> None:
-    """Run the forecast ingestion dry-run CLI."""
+    """Run the forecast ingestion CLI against the configured backend."""
     args = build_parser().parse_args()
-    payload = asyncio.run(
-        run_dry_ingestion(
-            providers=args.provider,
-            forecast_hours=args.forecast_hours,
-            include_mongo_preview=args.mongo_preview,
-            use_fixtures=args.use_fixtures,
-        )
+    settings = get_settings()
+    use_mongo = args.mongo or (
+        settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO
     )
+
+    if use_mongo:
+        payload = asyncio.run(
+            run_mongo_ingestion(
+                providers=args.provider,
+                forecast_hours=args.forecast_hours,
+                mongodb_uri=settings.mongodb_uri,
+                mongodb_database=settings.mongodb_database,
+                use_fixtures=args.use_fixtures,
+            )
+        )
+    else:
+        payload = asyncio.run(
+            run_dry_ingestion(
+                providers=args.provider,
+                forecast_hours=args.forecast_hours,
+                include_mongo_preview=args.mongo_preview,
+                use_fixtures=args.use_fixtures,
+            )
+        )
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 

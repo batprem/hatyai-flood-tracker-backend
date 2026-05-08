@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
@@ -8,6 +9,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
     from app.services.risk_rules import RiskRuleSettings
+
+
+class ForecastRepositoryBackend(StrEnum):
+    """Select the active forecast repository implementation."""
+
+    DRY_RUN = "dry_run"
+    MONGO = "mongo"
 
 
 class Settings(BaseSettings):
@@ -57,6 +65,18 @@ class Settings(BaseSettings):
     risk_water_watch_ratio: float = Field(default=0.8, gt=0, le=1)
     risk_water_station_max_age_hours: float = 3
     risk_allow_mock_water_level_raise: bool = False
+    mongodb_uri: str = Field(
+        default="mongodb://localhost:27017",
+        description="Connection URI used by the Mongo-backed forecast repository.",
+    )
+    mongodb_database: str = Field(
+        default="hatyai_flood_warning",
+        description="Database name used by the Mongo-backed forecast repository.",
+    )
+    forecast_repository_backend: ForecastRepositoryBackend = Field(
+        default=ForecastRepositoryBackend.DRY_RUN,
+        description=("Select the forecast repository backend: 'dry_run' (in-memory) or 'mongo'."),
+    )
 
     model_config = SettingsConfigDict(
         env_file="dev.env",

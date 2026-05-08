@@ -3,21 +3,42 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from app.api.health import router as health_router
 from app.api.routes import api_router
-from app.core.config import Settings, get_settings
+from app.core.config import ForecastRepositoryBackend, Settings, get_settings
+from app.ingestion.mongo_repository import MongoForecastRepository, build_mongo_repository
 from app.ingestion.repository import DryRunForecastRepository, ForecastRepository
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Prepare async application resources for future integrations."""
+    """Construct lifespan-managed resources, including the forecast repository."""
     if not hasattr(app.state, "settings"):
         app.state.settings = get_settings()
-    if not hasattr(app.state, "forecast_repository"):
-        app.state.forecast_repository = DryRunForecastRepository()
-    yield
+    settings: Settings = app.state.settings
+
+    repository_already_set = hasattr(app.state, "forecast_repository")
+    mongo_client: AsyncIOMotorClient | None = getattr(app.state, "mongo_client", None)
+
+    if not repository_already_set:
+        if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
+            mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
+            repository = build_mongo_repository(mongo_client, settings.mongodb_database)
+            await repository.ensure_indexes()
+            app.state.mongo_client = mongo_client
+            app.state.forecast_repository = repository
+        else:
+            app.state.forecast_repository = DryRunForecastRepository()
+
+    try:
+        yield
+    finally:
+        client_to_close: AsyncIOMotorClient | None = getattr(app.state, "mongo_client", None)
+        if client_to_close is not None:
+            client_to_close.close()
+            app.state.mongo_client = None
 
 
 def create_app(
@@ -35,7 +56,13 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings
-    app.state.forecast_repository = forecast_repository or DryRunForecastRepository()
+    if forecast_repository is not None:
+        app.state.forecast_repository = forecast_repository
+    elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
+        # Eagerly create the dry-run repository so synchronous test clients
+        # (e.g. `with TestClient(app)` against the in-memory backend) keep
+        # working without going through Mongo.
+        app.state.forecast_repository = DryRunForecastRepository()
 
     app.add_middleware(
         CORSMiddleware,
@@ -52,3 +79,6 @@ def create_app(
 
 
 app = create_app()
+
+
+__all__ = ["MongoForecastRepository", "app", "create_app"]
