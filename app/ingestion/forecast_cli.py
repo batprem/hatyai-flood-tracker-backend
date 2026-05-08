@@ -1,6 +1,8 @@
 import argparse
 import asyncio
 import json
+import logging
+import sys
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -8,7 +10,12 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import JsonValue
 
 from app.core.config import ForecastRepositoryBackend, get_settings
-from app.ingestion.models import ForecastProvider, ForecastRunStatus
+from app.ingestion.models import (
+    ForecastProvider,
+    ForecastRun,
+    ForecastRunStatus,
+    FreshnessStatus,
+)
 from app.ingestion.mongo_repository import build_mongo_repository
 from app.ingestion.normalizer import build_run_record, normalize_frames
 from app.ingestion.providers import build_provider_client
@@ -16,6 +23,8 @@ from app.ingestion.repository import (
     DryRunForecastRepository,
     ForecastRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def run_dry_ingestion(
@@ -39,7 +48,7 @@ async def run_dry_ingestion(
             available (currently GFS).
     """
     repo = repository if repository is not None else DryRunForecastRepository()
-    runs, frames = await _ingest_into_repository(
+    runs, frames, failures = await _ingest_into_repository(
         repo,
         providers=providers,
         forecast_hours=forecast_hours,
@@ -50,6 +59,7 @@ async def run_dry_ingestion(
         "mode": "dry-run",
         "runs": runs,
         "frames": frames,
+        "failures": failures,
         "freshness": to_json_value(await repo.freshness_summary()),
     }
     if include_mongo_preview:
@@ -79,7 +89,7 @@ async def run_mongo_ingestion(
     try:
         repository = build_mongo_repository(client, mongodb_database)
         await repository.ensure_indexes()
-        runs, frames = await _ingest_into_repository(
+        runs, frames, failures = await _ingest_into_repository(
             repository,
             providers=providers,
             forecast_hours=forecast_hours,
@@ -94,6 +104,7 @@ async def run_mongo_ingestion(
         "database": mongodb_database,
         "runs": runs,
         "frames": frames,
+        "failures": failures,
         "freshness": freshness,
     }
     return payload
@@ -105,20 +116,50 @@ async def _ingest_into_repository(
     providers: list[ForecastProvider],
     forecast_hours: list[int],
     use_fixtures: bool,
-) -> tuple[list[JsonValue], list[JsonValue]]:
-    """Ingest each provider's latest run into ``repository`` and return JSON copies."""
+) -> tuple[list[JsonValue], list[JsonValue], list[JsonValue]]:
+    """Ingest each provider's latest run into ``repository`` and return JSON copies.
+
+    Each provider is ingested in isolation so a failure in one provider does
+    not prevent the others from running. Every provider invocation writes a
+    ``forecast_runs`` row regardless of outcome: successful runs are recorded
+    with their normalized freshness status, failed runs are recorded with
+    ``status='failed'`` and ``freshness_status='failed'`` so cron operators
+    can see the failure in MongoDB and the API freshness endpoint.
+
+    Returns:
+        Tuple of ``(runs, frames, failures)`` where ``failures`` is a list of
+        per-provider failure descriptors. The list is empty on full success.
+    """
     runs: list[JsonValue] = []
     frames: list[JsonValue] = []
+    failures: list[JsonValue] = []
     retrieved_at = datetime.now(UTC)
 
     for provider in providers:
-        client = build_provider_client(provider, forecast_hours, use_fixtures=use_fixtures)
-        run_ref = client.discover_latest_run(retrieved_at)
-        artifacts = client.fetch_run(run_ref)
-        run = build_run_record(run_ref, artifacts, retrieved_at).model_copy(
-            update={"status": ForecastRunStatus.STORED}
-        )
-        normalized_frames = normalize_frames(run_ref, artifacts, retrieved_at)
+        try:
+            run, normalized_frames = _ingest_single_provider(
+                provider,
+                forecast_hours=forecast_hours,
+                retrieved_at=retrieved_at,
+                use_fixtures=use_fixtures,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("provider ingestion failed: provider=%s", provider.value)
+            failure_record = _build_failure_run_record(
+                provider=provider,
+                forecast_hours=forecast_hours,
+                retrieved_at=retrieved_at,
+                error_reason=f"{type(exc).__name__}: {exc}",
+            )
+            await repository.upsert_run(failure_record)
+            failures.append(
+                {
+                    "provider": provider.value,
+                    "errorReason": failure_record.error_reason,
+                    "runId": failure_record.run_id,
+                }
+            )
+            continue
 
         await repository.upsert_run(run)
         await repository.upsert_frames(normalized_frames)
@@ -126,7 +167,83 @@ async def _ingest_into_repository(
         runs.append(run.model_dump(mode="json", by_alias=True))
         frames.extend(frame.model_dump(mode="json", by_alias=True) for frame in normalized_frames)
 
-    return runs, frames
+    return runs, frames, failures
+
+
+def _ingest_single_provider(
+    provider: ForecastProvider,
+    *,
+    forecast_hours: list[int],
+    retrieved_at: datetime,
+    use_fixtures: bool,
+) -> tuple[ForecastRun, list[object]]:
+    """Discover, fetch, and normalize a single provider run.
+
+    Raised exceptions are intentionally propagated so the caller can record a
+    failed ``forecast_runs`` row with the originating error reason.
+    """
+    client = build_provider_client(provider, forecast_hours, use_fixtures=use_fixtures)
+    run_ref = client.discover_latest_run(retrieved_at)
+    artifacts = client.fetch_run(run_ref)
+    run = build_run_record(run_ref, artifacts, retrieved_at).model_copy(
+        update={"status": ForecastRunStatus.STORED}
+    )
+    normalized_frames = normalize_frames(run_ref, artifacts, retrieved_at)
+    return run, list(normalized_frames)
+
+
+def _build_failure_run_record(
+    *,
+    provider: ForecastProvider,
+    forecast_hours: list[int],
+    retrieved_at: datetime,
+    error_reason: str,
+) -> ForecastRun:
+    """Construct a ``forecast_runs`` document for a failed provider invocation.
+
+    The run is keyed on the retrieval timestamp rather than a discovered
+    cycle so failures during run discovery still produce a stable, idempotent
+    row. ``freshness_status`` is forced to ``failed`` so the freshness API
+    surfaces the failure to operators and the frontend.
+    """
+    cycle = retrieved_at.astimezone(UTC).strftime("%Y%m%d%H%M%S")
+    model_label = _failure_model_label(provider)
+    run_id = f"{provider.value}:{model_label}:failed:{cycle}"
+    return ForecastRun(
+        run_id=run_id,
+        provider=provider,
+        model=model_label,
+        product="unknown",
+        run_time=retrieved_at,
+        retrieved_at=retrieved_at,
+        processed_at=retrieved_at,
+        expected_forecast_hours=list(forecast_hours),
+        source_urls=[],
+        status=ForecastRunStatus.FAILED,
+        freshness_status=FreshnessStatus.FAILED,
+        freshness_threshold_hours=_failure_freshness_threshold_hours(provider),
+        license="unknown",
+        attribution="unknown",
+        error_reason=error_reason,
+    )
+
+
+def _failure_model_label(provider: ForecastProvider) -> str:
+    """Return the canonical model label used for failed-run bookkeeping."""
+    if provider is ForecastProvider.GFS:
+        return "gfs"
+    if provider is ForecastProvider.ECMWF_OPEN_DATA:
+        return "ifs"
+    return provider.value
+
+
+def _failure_freshness_threshold_hours(provider: ForecastProvider) -> int:
+    """Return a sane freshness threshold for a failed run record."""
+    if provider is ForecastProvider.GFS:
+        return 7
+    if provider is ForecastProvider.ECMWF_OPEN_DATA:
+        return 13
+    return 12
 
 
 def parse_forecast_hours(value: str) -> list[int]:
@@ -212,7 +329,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Run the forecast ingestion CLI against the configured backend."""
+    """Run the forecast ingestion CLI against the configured backend.
+
+    Exits non-zero whenever any provider invocation fails so Railway cron
+    surfaces failed runs as failed processes. A ``failed`` ``forecast_runs``
+    row is still written for each failed provider before exit.
+    """
     args = build_parser().parse_args()
     settings = get_settings()
     use_mongo = args.mongo or (
@@ -239,6 +361,10 @@ def main() -> None:
             )
         )
     print(json.dumps(payload, indent=2, sort_keys=True))
+
+    failures = payload.get("failures")
+    if isinstance(failures, list) and failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
