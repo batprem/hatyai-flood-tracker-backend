@@ -1,0 +1,32 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: gfs-ingest
+  # Update region to match your Cloud Run deployment region.
+  annotations:
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          maxRetries: 1
+          timeoutSeconds: "600"
+          containers:
+            - image: IMAGE  # Replace with your Cloud Run image, e.g. asia-southeast1-docker.pkg.dev/PROJECT_ID/hatyai/backend:latest
+              command: ["python", "-m", "app.ingestion.forecast_cli"]
+              args: ["--provider", "gfs", "--mongo"]
+              env:
+                - name: HFT_FORECAST_REPOSITORY_BACKEND
+                  value: mongo
+                # Inject secrets via Cloud Run secret references, e.g.:
+                # - name: HFT_MONGODB_URI
+                #   valueFrom:
+                #     secretKeyRef:
+                #       name: mongodb-uri
+                #       key: latest
+              resources:
+                limits:
+                  cpu: "1"
+                  memory: 512Mi

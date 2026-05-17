@@ -63,6 +63,6 @@ USER app
 
 EXPOSE 8000
 
-# Default to the API process. Railway overrides the start command for the
-# cron service (see ``railway.json``).
+# Default to the API process. The GFS ingestion cron runs as a separate
+# Cloud Run Job (see deploy/gfs-ingest-job.yaml).
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
