@@ -48,7 +48,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Protocol
+from typing import Protocol, cast
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -385,9 +385,7 @@ class ThaiwaterStationClient:
         for seed in self.seeds:
             parsed = latest_by_seed.get(seed.station_id)
             if parsed is None:
-                logger.debug(
-                    "ThaiWater returned no record for seed station %s", seed.station_id
-                )
+                logger.debug("ThaiWater returned no record for seed station %s", seed.station_id)
                 continue
             observation = _build_observation(
                 seed=seed,
@@ -449,11 +447,13 @@ def _extract_record_list(payload: object) -> Iterable[object]:
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
-        data = payload.get("data")
+        payload_dict = cast(dict[str, object], payload)
+        data = payload_dict.get("data")
         if isinstance(data, list):
             return data
         if isinstance(data, dict):
-            inner = data.get("data") or data.get("items")
+            data_dict = cast(dict[str, object], data)
+            inner = data_dict.get("data") or data_dict.get("items")
             if isinstance(inner, list):
                 return inner
     return ()
@@ -477,23 +477,24 @@ def _parse_waterlevel_record(raw: object) -> _ParsedRecord | None:
     """
     if not isinstance(raw, dict):
         return None
-    station_code = _extract_station_code(raw)
+    raw_dict = cast(dict[str, object], raw)
+    station_code = _extract_station_code(raw_dict)
     if not station_code:
         return None
     value = _coerce_float(
-        raw.get("waterlevel_msl")
-        or raw.get("water_level_msl")
-        or raw.get("waterlevel")
-        or raw.get("value")
+        raw_dict.get("waterlevel_msl")
+        or raw_dict.get("water_level_msl")
+        or raw_dict.get("waterlevel")
+        or raw_dict.get("value")
     )
     if value is None:
         return None
     observed_raw = (
-        raw.get("waterlevel_datetime")
-        or raw.get("waterlevel_time")
-        or raw.get("datetime")
-        or raw.get("measureTime")
-        or raw.get("observedAt")
+        raw_dict.get("waterlevel_datetime")
+        or raw_dict.get("waterlevel_time")
+        or raw_dict.get("datetime")
+        or raw_dict.get("measureTime")
+        or raw_dict.get("observedAt")
     )
     observed_at = _parse_thai_datetime(observed_raw)
     if observed_at is None:
@@ -508,8 +509,9 @@ def _parse_waterlevel_record(raw: object) -> _ParsedRecord | None:
 def _extract_station_code(raw: dict[str, object]) -> str | None:
     station = raw.get("station")
     if isinstance(station, dict):
+        station_dict = cast(dict[str, object], station)
         for key in ("tele_station_oldcode", "station_oldcode", "station_code", "code"):
-            value = station.get(key)
+            value = station_dict.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip()
     for key in ("tele_station_oldcode", "station_oldcode", "station_code", "stationId", "code"):
