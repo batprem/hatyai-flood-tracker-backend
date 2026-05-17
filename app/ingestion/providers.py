@@ -179,13 +179,19 @@ def build_provider_client(
     if provider is ForecastProvider.ECMWF_OPEN_DATA:
         if use_fixtures:
             return _build_ecmwf_fixture_client(hours)
+        # Late imports keep the providers module importable in environments
+        # without eccodes (e.g. offline CI for unrelated tests).
+        from app.core.config import get_settings
         from app.ingestion.ecmwf_client import EcmwfBoundingBox, build_ecmwf_client
         from app.ingestion.models import Phase1Area
 
         west, south, east, north = Phase1Area().bbox
+        settings = get_settings()
         return build_ecmwf_client(
             forecast_hours=hours,
             bbox=EcmwfBoundingBox(west=west, south=south, east=east, north=north),
+            freshness_threshold_hours=settings.ecmwf_freshness_threshold_hours,
+            base_url=settings.ecmwf_base_url,
         )
 
     msg = f"unsupported forecast provider: {provider}"
