@@ -188,6 +188,15 @@ class DecodeTpMessageTests(unittest.TestCase):
         self.assertTrue(all(v >= 0 for v in decoded_clipped.values_m))
         self.assertEqual(len(decoded_clipped.values_m), EXPECTED_CLIP_FIXTURE_COUNT)
 
+    def test_bbox_clipping_preserves_2d_grid_dimensions(self) -> None:
+        """Clipped grid keeps proper width/height instead of collapsing to height=1."""
+        # Phase1 bbox over a 5x5 0.25° fixture yields a 3×3 inner block:
+        # lons {100.25, 100.50, 100.75} × lats {6.75, 7.00, 7.25} = 9 cells.
+        decoded = decode_tp_message(F006_BYTES, forecast_hour=6, bbox=PHASE1_BBOX)
+        self.assertEqual(decoded.width, 3)
+        self.assertEqual(decoded.height, 3)
+        self.assertEqual(decoded.width * decoded.height, len(decoded.values_m))
+
     def test_bbox_clipping_raises_when_no_cells_within_bounds(self) -> None:
         # Use a bbox that does not overlap the fixture grid at all.
         far_away_bbox = EcmwfBoundingBox(west=0.0, south=0.0, east=1.0, north=1.0)
@@ -559,6 +568,43 @@ class EcmwfNormalizerIntegrationTests(unittest.TestCase):
         self.assertEqual(frame_012.accumulation_hours, 6)
         # Window for 12 h step = tp[12] - tp[6]; both are positive so result ≥ 0.
         self.assertGreaterEqual(min(frame_012.values_mm), 0.0)
+
+    def test_production_gate_license_fields_are_populated(self) -> None:
+        """ECMWF source records must carry SPDX id, license URL, and redistribution note.
+
+        Per docs/data-sources.md, the License Notes production gate requires
+        each provider record to carry license/terms URL and a redistribution
+        and caching decision. The ECMWF real client must populate both.
+        """
+        full_bbox = EcmwfBoundingBox(west=100.0, south=6.5, east=101.0, north=7.5)
+        _, factory = _client_factory_from({6: F006_BYTES})
+        client = build_ecmwf_client(
+            forecast_hours=(6,),
+            bbox=full_bbox,
+            http_client_factory=factory,  # type: ignore[arg-type]
+        )
+        retrieved_at = datetime(2026, 5, 1, 4, 30, tzinfo=UTC)
+        run_ref = client.discover_latest_run(retrieved_at)
+        artifacts = client.fetch_run(run_ref)
+        run_record = build_run_record(run_ref, artifacts, retrieved_at)
+        frames = normalize_frames(run_ref, artifacts, retrieved_at)
+
+        # ProviderRunRef must carry the production-gate fields.
+        self.assertEqual(run_ref.license, "CC-BY-4.0")
+        self.assertTrue(run_ref.license_url)
+        self.assertIn("creativecommons", run_ref.license_url or "")
+        self.assertTrue(run_ref.redistribution_note)
+        self.assertIn("CC-BY-4.0", run_ref.redistribution_note or "")
+        self.assertIn("attribution", (run_ref.redistribution_note or "").lower())
+
+        # ForecastRun and every ForecastSource must mirror the production-gate fields.
+        self.assertEqual(run_record.license, "CC-BY-4.0")
+        self.assertTrue(run_record.license_url)
+        self.assertTrue(run_record.redistribution_note)
+        for frame in frames:
+            self.assertEqual(frame.source.license, "CC-BY-4.0")
+            self.assertTrue(frame.source.license_url)
+            self.assertTrue(frame.source.redistribution_note)
 
 
 # ---------------------------------------------------------------------------

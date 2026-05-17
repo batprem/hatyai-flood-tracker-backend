@@ -57,6 +57,17 @@ DEFAULT_ECMWF_CYCLE_HOURS: tuple[int, ...] = (0, 12)
 DEFAULT_ECMWF_FRESHNESS_THRESHOLD_HOURS = 13
 DEFAULT_ECMWF_LICENSE = "CC-BY-4.0"
 DEFAULT_ECMWF_LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
+# Per docs/data-sources.md ("License Notes" production gate), each provider
+# record must carry attribution, license/terms URL, and a redistribution and
+# caching decision. ECMWF Open Data permits redistribution of derived rainfall
+# maps when CC-BY-4.0 attribution is preserved; this string records that
+# decision so the production gate has an auditable provenance trail.
+DEFAULT_ECMWF_REDISTRIBUTION_NOTE = (
+    "Redistribution of derived rainfall maps permitted under CC-BY-4.0 with "
+    "attribution to 'ECMWF Open Data — IFS Forecast' and a link to the license; "
+    "caching of clipped subsets for the Hat Yai/U-Tapao basin permitted. "
+    "Refer to https://apps.ecmwf.int/datasets/licences/general/ for the full terms."
+)
 DEFAULT_ECMWF_ATTRIBUTION = "ECMWF Open Data — IFS Forecast"
 DEFAULT_ECMWF_PRODUCT = "ifs/0p25/oper"
 DEFAULT_ECMWF_MODEL = "ifs"
@@ -135,6 +146,7 @@ class EcmwfOpenDataProviderClient:
     model: str = DEFAULT_ECMWF_MODEL
     license: str = DEFAULT_ECMWF_LICENSE
     license_url: str = DEFAULT_ECMWF_LICENSE_URL
+    redistribution_note: str = DEFAULT_ECMWF_REDISTRIBUTION_NOTE
     attribution: str = DEFAULT_ECMWF_ATTRIBUTION
     base_url: str = ECMWF_OPEN_DATA_BASE_URL
     retries: int = HTTP_DEFAULT_RETRIES
@@ -176,6 +188,8 @@ class EcmwfOpenDataProviderClient:
                         freshness_threshold_hours=self.freshness_threshold_hours,
                         license=self.license,
                         attribution=self.attribution,
+                        license_url=self.license_url,
+                        redistribution_note=self.redistribution_note,
                     )
 
         msg = (
@@ -422,6 +436,55 @@ def _get_latlons(message: _EccodesMessage) -> tuple[list[float], list[float]]:
     return lats, lons
 
 
+def _infer_grid_shape(
+    lats: list[float],
+    lons: list[float],
+    *,
+    resolution: float,
+) -> tuple[int, int]:
+    """Infer (width, height) for a clipped regular lat/lon scan.
+
+    ECMWF Open Data IFS 0.25-degree files are stored on a regular lat/lon
+    grid. After clipping to a bounding box, ``width`` equals the number of
+    unique longitudes and ``height`` equals the number of unique latitudes.
+    Coordinate equality is matched at half the grid resolution to absorb
+    floating-point noise in the raw GRIB coordinate arrays.
+
+    Raises:
+        EcmwfIngestionError: When the clipped point count does not equal
+            width * height. That mismatch indicates the assumption of a
+            regular scan no longer holds and downstream consumers cannot
+            treat the values as a 2D grid.
+    """
+    tolerance = max(resolution / 2.0, 1e-6)
+    unique_lats = _unique_coords(lats, tolerance=tolerance)
+    unique_lons = _unique_coords(lons, tolerance=tolerance)
+    width = len(unique_lons)
+    height = len(unique_lats)
+    expected = width * height
+    if expected != len(lats):
+        msg = (
+            "clipped ECMWF tp grid is not a regular rectangular scan: "
+            f"unique_lons={width}, unique_lats={height}, "
+            f"points={len(lats)} (expected {expected}); "
+            "downstream consumers assume 2D grid dimensions"
+        )
+        raise EcmwfIngestionError(msg)
+    return width, height
+
+
+def _unique_coords(values: list[float], *, tolerance: float) -> list[float]:
+    """Return sorted unique coordinates collapsing points within ``tolerance``."""
+    if not values:
+        return []
+    sorted_values = sorted(values)
+    unique: list[float] = [sorted_values[0]]
+    for value in sorted_values[1:]:
+        if abs(value - unique[-1]) > tolerance:
+            unique.append(value)
+    return unique
+
+
 def decode_tp_message(
     grib_bytes: bytes,
     forecast_hour: int,
@@ -518,11 +581,14 @@ def decode_tp_message(
 
     # Clip to bbox when provided.
     if bbox is not None:
-        clipped_values: list[float] = [
-            v
-            for v, lat, lon in zip(all_values, all_lats, all_lons, strict=True)
-            if bbox.contains(lat, lon)
-        ]
+        clipped_values: list[float] = []
+        clipped_lats: list[float] = []
+        clipped_lons: list[float] = []
+        for v, lat, lon in zip(all_values, all_lats, all_lons, strict=True):
+            if bbox.contains(lat, lon):
+                clipped_values.append(v)
+                clipped_lats.append(lat)
+                clipped_lons.append(lon)
         if not clipped_values:
             msg = (
                 f"no grid points remain after clipping to bbox "
@@ -531,10 +597,9 @@ def decode_tp_message(
             )
             raise EcmwfIngestionError(msg)
         values_m = tuple(round(v, 7) for v in clipped_values)
-        # Compute clipped grid dimensions from point count (best-effort).
-        clip_count = len(clipped_values)
-        clipped_width = clip_count
-        clipped_height = 1
+        clipped_width, clipped_height = _infer_grid_shape(
+            clipped_lats, clipped_lons, resolution=resolution
+        )
     else:
         values_m = tuple(round(v, 7) for v in all_values)
         clipped_width = ni
@@ -567,6 +632,10 @@ def build_ecmwf_client(
     freshness_threshold_hours: int | None = None,
     base_url: str | None = None,
     http_client_factory: HttpClientFactory | None = None,
+    license_identifier: str | None = None,
+    license_url: str | None = None,
+    redistribution_note: str | None = None,
+    attribution: str | None = None,
 ) -> EcmwfOpenDataProviderClient:
     """Build an ``EcmwfOpenDataProviderClient`` with sensible defaults.
 
@@ -577,6 +646,14 @@ def build_ecmwf_client(
         freshness_threshold_hours: Override freshness window; default is 13.
         base_url: Override CDN base URL (useful for tests).
         http_client_factory: Override the HTTP client factory.
+        license_identifier: Override the short SPDX/terms identifier
+            recorded on every frame and run.
+        license_url: Override the license terms URL recorded on every frame
+            and run (production gate requirement).
+        redistribution_note: Override the redistribution/caching decision
+            string recorded on every frame and run (production gate
+            requirement).
+        attribution: Override the public attribution string.
 
     Returns:
         Configured ``EcmwfOpenDataProviderClient``.
@@ -601,6 +678,10 @@ def build_ecmwf_client(
             if freshness_threshold_hours is not None
             else DEFAULT_ECMWF_FRESHNESS_THRESHOLD_HOURS
         ),
+        license=license_identifier or DEFAULT_ECMWF_LICENSE,
+        license_url=license_url or DEFAULT_ECMWF_LICENSE_URL,
+        redistribution_note=redistribution_note or DEFAULT_ECMWF_REDISTRIBUTION_NOTE,
+        attribution=attribution or DEFAULT_ECMWF_ATTRIBUTION,
         base_url=base_url or ECMWF_OPEN_DATA_BASE_URL,
         http_client_factory=http_client_factory or _default_http_client,
     )

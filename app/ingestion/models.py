@@ -70,11 +70,24 @@ class ForecastGrid(BaseModel):
 
 
 class ForecastSource(BaseModel):
-    """Preserve provider provenance and license review state."""
+    """Preserve provider provenance and license review state.
+
+    Per ``docs/data-sources.md`` ("License Notes" production gate), a provider
+    record must carry attribution text, license/terms URL, redistribution and
+    caching decision, and source-owner name. ``license`` stays the short SPDX
+    identifier (or ``"review-required"`` until cleared) while ``licenseUrl``
+    and ``redistributionNote`` cover the production-gate detail. Both detail
+    fields are optional so existing dry-run fixtures keep working, but the
+    real provider clients populate them.
+    """
 
     url: str
     product: str
     license: str
+    license_url: str | None = Field(default=None, serialization_alias="licenseUrl")
+    redistribution_note: str | None = Field(
+        default=None, serialization_alias="redistributionNote"
+    )
     attribution: str
     raw_artifact_ref: str = Field(serialization_alias="rawArtifactRef")
 
@@ -111,6 +124,10 @@ class ForecastRun(BaseModel):
         serialization_alias="freshnessThresholdHours",
     )
     license: str
+    license_url: str | None = Field(default=None, serialization_alias="licenseUrl")
+    redistribution_note: str | None = Field(
+        default=None, serialization_alias="redistributionNote"
+    )
     attribution: str
     error_reason: str | None = Field(default=None, serialization_alias="errorReason")
 

@@ -70,6 +70,11 @@ class MongoForecastRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("runId_unique", runs_indexes)
         self.assertIn("provider_model_runTime_unique", runs_indexes)
+        # MongoDB time-series collections do not support unique indexes, so
+        # the frames collection carries a non-unique ``frameId`` lookup index
+        # (see commit 567a4c9 "fix: drop unique constraint on frames
+        # time-series index"). Idempotency is enforced by ``upsert_frames``
+        # via delete-by-frameId-then-insert rather than a Mongo constraint.
         self.assertIn("frameId", frames_indexes)
         self.assertIn("provider_model_area_validTime", frames_indexes)
 

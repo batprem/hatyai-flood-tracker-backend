@@ -57,44 +57,76 @@ class ForecastIngestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(frame_doc["windowEnd"], frame_doc["validTime"])
         self.assertEqual(frame_doc["accumulationHours"], 6)
 
-    async def test_provider_failure_records_failed_run_and_returns_failures(self) -> None:
-        repository = DryRunForecastRepository()
+    async def test_full_success_records_status_stored(self) -> None:
+        payload = await run_dry_ingestion(
+            providers=[ForecastProvider.GFS],
+            forecast_hours=[6, 12],
+            include_mongo_preview=False,
+            use_fixtures=True,
+        )
 
-        def boom(
+        self.assertEqual(len(payload["runs"]), 1)
+        run = payload["runs"][0]
+        self.assertEqual(run["status"], ForecastRunStatus.STORED.value)
+        self.assertEqual(run["errorReason"], None)
+        self.assertEqual(len(payload["frames"]), 2)
+        self.assertEqual(payload["failures"], [])
+
+    async def test_partial_provider_failure_records_failed_run_and_continues(
+        self,
+    ) -> None:
+        """One provider raising must not abort sibling providers; failed run is persisted."""
+
+        real_build = build_provider_client
+
+        class _FailingClient:
+            def discover_latest_run(self, _now: datetime) -> None:
+                msg = "simulated CDN outage"
+                raise RuntimeError(msg)
+
+            def fetch_run(self, _ref: object) -> list[object]:
+                return []
+
+        def _fault_injecting_build(
             provider: ForecastProvider,
             forecast_hours: list[int],
             *,
-            use_fixtures: bool,
+            use_fixtures: bool = False,
         ) -> object:
-            raise RuntimeError("provider unavailable")
+            if provider is ForecastProvider.ECMWF_OPEN_DATA:
+                return _FailingClient()
+            return real_build(provider, forecast_hours, use_fixtures=use_fixtures)
 
-        with (
-            mock.patch.object(forecast_cli, "build_provider_client", side_effect=boom),
-            self.assertLogs(forecast_cli.logger, level=logging.ERROR),
+        with mock.patch(
+            "app.ingestion.forecast_cli.build_provider_client",
+            side_effect=_fault_injecting_build,
         ):
             payload = await run_dry_ingestion(
-                providers=[ForecastProvider.GFS],
-                forecast_hours=[6],
+                providers=[ForecastProvider.GFS, ForecastProvider.ECMWF_OPEN_DATA],
+                forecast_hours=[6, 12],
                 include_mongo_preview=False,
-                repository=repository,
                 use_fixtures=True,
             )
 
-        self.assertEqual(payload["runs"], [])
-        self.assertEqual(payload["frames"], [])
+        # Two run records: GFS success + ECMWF failure placeholder.
+        self.assertEqual(len(payload["runs"]), 2)
+        providers = {run["provider"] for run in payload["runs"]}
+        self.assertEqual(providers, {"gfs", "ecmwf_open_data"})
+
+        gfs_run = next(run for run in payload["runs"] if run["provider"] == "gfs")
+        ecmwf_run = next(
+            run for run in payload["runs"] if run["provider"] == "ecmwf_open_data"
+        )
+        self.assertEqual(gfs_run["status"], ForecastRunStatus.STORED.value)
+        self.assertEqual(ecmwf_run["status"], ForecastRunStatus.FAILED.value)
+        self.assertIn("simulated CDN outage", ecmwf_run["errorReason"])
+        # Only the successful provider contributes frames; failure persisted no frames.
+        self.assertEqual(len(payload["frames"]), 2)
+        for frame in payload["frames"]:
+            self.assertEqual(frame["provider"], "gfs")
+        # Failure also surfaces in the failures list for sys.exit detection.
         self.assertEqual(len(payload["failures"]), 1)
-        failure = payload["failures"][0]
-        self.assertEqual(failure["provider"], "gfs")
-        self.assertIn("provider unavailable", failure["errorReason"])
-
-        self.assertEqual(len(repository.runs), 1)
-        failure_run = repository.runs[0]
-        self.assertEqual(failure_run.status, ForecastRunStatus.FAILED)
-        self.assertEqual(failure_run.freshness_status, FreshnessStatus.FAILED)
-        self.assertIsNotNone(failure_run.error_reason)
-
-        summary = await repository.freshness_summary()
-        self.assertEqual(summary["status"], FreshnessStatus.FAILED)
+        self.assertEqual(payload["failures"][0]["provider"], "ecmwf_open_data")
 
 
 class ForecastCliExitCodeTests(unittest.TestCase):
@@ -128,7 +160,8 @@ class ForecastCliExitCodeTests(unittest.TestCase):
 
         self.assertEqual(exit_ctx.exception.code, 1)
         payload = json.loads(captured.getvalue())
-        self.assertEqual(payload["runs"], [])
+        self.assertEqual(len(payload["runs"]), 1)
+        self.assertEqual(payload["runs"][0]["status"], ForecastRunStatus.FAILED.value)
         self.assertEqual(len(payload["failures"]), 1)
         self.assertEqual(payload["failures"][0]["provider"], "gfs")
 
@@ -146,7 +179,6 @@ class ForecastCliExitCodeTests(unittest.TestCase):
             mock.patch.object(sys, "argv", argv),
             contextlib.redirect_stdout(captured),
         ):
-            # main() returns normally on success; assert no SystemExit raised.
             forecast_cli.main()
 
         payload = json.loads(captured.getvalue())
