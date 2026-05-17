@@ -65,6 +65,32 @@ class Settings(BaseSettings):
     risk_water_watch_ratio: float = Field(default=0.8, gt=0, le=1)
     risk_water_station_max_age_hours: float = 3
     risk_allow_mock_water_level_raise: bool = False
+    ecmwf_base_url: str = Field(
+        default="https://data.ecmwf.int/forecasts",
+        validation_alias=AliasChoices("HFT_ECMWF_BASE_URL", "ECMWF_BASE_URL"),
+        description="Base CDN URL for ECMWF Open Data IFS real-time forecasts.",
+    )
+    ecmwf_freshness_threshold_hours: int = Field(
+        default=13,
+        validation_alias=AliasChoices(
+            "HFT_ECMWF_FRESHNESS_THRESHOLD_HOURS", "ECMWF_FRESHNESS_THRESHOLD_HOURS"
+        ),
+        description=(
+            "Hours after a nominal IFS run time before the run is considered stale. "
+            "ECMWF publishes results ~9-12 h after the nominal run time; 13 h allows "
+            "for typical dissemination delays."
+        ),
+    )
+    ecmwf_http_timeout_seconds: float = Field(
+        default=120.0,
+        validation_alias=AliasChoices(
+            "HFT_ECMWF_HTTP_TIMEOUT_SECONDS", "ECMWF_HTTP_TIMEOUT_SECONDS"
+        ),
+        description=(
+            "HTTP timeout in seconds for ECMWF Open Data downloads. "
+            "Files are global 0.25-degree GRIB2 (1-3 MB); 120 s covers slow CDN responses."
+        ),
+    )
     mongodb_uri: str = Field(
         default="mongodb://localhost:27017",
         description="Connection URI used by the Mongo-backed forecast repository.",

@@ -164,21 +164,15 @@ def build_provider_client(
         )
 
     if provider is ForecastProvider.ECMWF_OPEN_DATA:
-        return FixtureForecastProviderClient(
-            provider=ForecastProvider.ECMWF_OPEN_DATA,
-            model="ifs",
-            product="open-data-tp",
-            cycle_hours=(0, 12),
-            freshness_threshold_hours=13,
+        if use_fixtures:
+            return _build_ecmwf_fixture_client(hours)
+        from app.ingestion.ecmwf_client import EcmwfBoundingBox, build_ecmwf_client
+        from app.ingestion.models import Phase1Area
+
+        west, south, east, north = Phase1Area().bbox
+        return build_ecmwf_client(
             forecast_hours=hours,
-            base_url="https://data.ecmwf.int/forecasts",
-            license="ECMWF Open Data terms must be reviewed before production public display",
-            attribution="ECMWF Open Data",
-            provider_accumulation_semantics=(
-                "POC treats total precipitation as an accumulation over the previous "
-                "forecast interval; "
-                "real client must preserve ECMWF step metadata."
-            ),
+            bbox=EcmwfBoundingBox(west=west, south=south, east=east, north=north),
         )
 
     msg = f"unsupported forecast provider: {provider}"
@@ -204,5 +198,26 @@ def _build_gfs_fixture_client(
         provider_accumulation_semantics=(
             "POC treats APCP as an accumulation over the previous forecast interval; "
             "real client must preserve GRIB step range semantics."
+        ),
+    )
+
+
+def _build_ecmwf_fixture_client(
+    forecast_hours: tuple[int, ...],
+) -> FixtureForecastProviderClient:
+    """Return the deterministic ECMWF Open Data fixture client for offline tests and CI."""
+    return FixtureForecastProviderClient(
+        provider=ForecastProvider.ECMWF_OPEN_DATA,
+        model="ifs",
+        product="ifs/0p25/oper",
+        cycle_hours=(0, 12),
+        freshness_threshold_hours=13,
+        forecast_hours=forecast_hours,
+        base_url="https://data.ecmwf.int/forecasts",
+        license="CC-BY-4.0",
+        attribution="ECMWF Open Data — IFS Forecast",
+        provider_accumulation_semantics=(
+            "Fixture: window-accumulation mm values; "
+            "real client derives windows as tp[step_N] - tp[step_N-1] from run-total metres."
         ),
     )
