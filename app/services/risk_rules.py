@@ -1,7 +1,8 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from app.ingestion.models import ForecastFrame
 from app.schemas.common import DataFreshness, RiskLevel
 from app.schemas.risk import (
     CurrentRiskResponse,
@@ -101,6 +102,52 @@ def score_rainfall(rainfall_mm: float, threshold: RainfallThreshold) -> RiskLeve
     if rainfall_mm >= threshold.yellow_mm:
         return RiskLevel.YELLOW
     return RiskLevel.GREEN
+
+
+def build_rainfall_inputs_from_frames(
+    frames: Iterable[ForecastFrame],
+) -> list[RainfallRiskInput]:
+    """Derive rainfall risk inputs from stored forecast frames.
+
+    Each frame becomes one input where ``rainfall_mm`` is the maximum cell value
+    across the basin grid. This conservatively follows the rule that the public
+    status takes the maximum risk across relevant basin cells (see
+    ``docs/risk-layer-design.md`` lines 22-43 and 60-62). The ``area_id`` is
+    composed of provider, model, valid time, and accumulation window so each
+    frame is a distinct scored unit and downstream coverage counts reflect the
+    actual distinct basin observations rather than collapsing windows.
+
+    Args:
+        frames: Normalized forecast frames persisted in MongoDB.
+
+    Returns:
+        A list of ``RainfallRiskInput`` ready for ``calculate_current_risk``.
+    """
+    inputs: list[RainfallRiskInput] = []
+    for frame in frames:
+        if not frame.values_mm:
+            continue
+        rainfall_mm = max(frame.values_mm)
+        valid_iso = frame.valid_time.astimezone(UTC).strftime("%Y%m%dT%H%MZ")
+        area_id = f"{frame.provider.value}:{frame.model}:{frame.accumulation_hours}h:{valid_iso}"
+        area_name = (
+            f"{frame.area.name} ({frame.accumulation_hours}h accumulation "
+            f"valid {frame.valid_time.astimezone(UTC).isoformat()})"
+        )
+        inputs.append(
+            RainfallRiskInput(
+                area_id=area_id,
+                area_name=area_name,
+                rainfall_mm=rainfall_mm,
+                accumulation_hours=frame.accumulation_hours,
+                source=frame.provider.value,
+                model_run_time=frame.run_time,
+                valid_time=frame.valid_time,
+                retrieved_at=frame.retrieved_at,
+                is_mock=False,
+            )
+        )
+    return inputs
 
 
 def score_water_level(

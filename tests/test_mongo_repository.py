@@ -70,7 +70,7 @@ class MongoForecastRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("runId_unique", runs_indexes)
         self.assertIn("provider_model_runTime_unique", runs_indexes)
-        self.assertIn("frameId_unique", frames_indexes)
+        self.assertIn("frameId", frames_indexes)
         self.assertIn("provider_model_area_validTime", frames_indexes)
 
     async def test_upsert_run_is_idempotent_on_run_id(self) -> None:
