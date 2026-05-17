@@ -91,6 +91,44 @@ class Settings(BaseSettings):
             "Files are global 0.25-degree GRIB2 (1-3 MB); 120 s covers slow CDN responses."
         ),
     )
+    thaiwater_base_url: str = Field(
+        default="https://api-v3.thaiwater.net/api/v1/thaiwater30/public",
+        validation_alias=AliasChoices("HFT_THAIWATER_BASE_URL", "THAIWATER_BASE_URL"),
+        description=(
+            "Base URL for the ThaiWater / HAII national hydroinformatics public API. "
+            "The Phase 1 station endpoints are appended (e.g. /waterlevel_load)."
+        ),
+    )
+    thaiwater_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("HFT_THAIWATER_API_KEY", "THAIWATER_API_KEY"),
+        description=(
+            "Optional bearer token / API key for ThaiWater. The public read-only "
+            "endpoints used in Phase 1 do not require credentials, but setting this "
+            "enables authenticated tiers when access is granted by HAII."
+        ),
+    )
+    thaiwater_max_age_hours: float = Field(
+        default=3.0,
+        validation_alias=AliasChoices(
+            "HFT_THAIWATER_MAX_AGE_HOURS", "THAIWATER_MAX_AGE_HOURS"
+        ),
+        description=(
+            "Maximum age (hours) of a ThaiWater station observation before it is "
+            "treated as stale and excluded from the public response. Aligns with the "
+            "risk engine's water_station_max_age_hours threshold."
+        ),
+    )
+    thaiwater_timeout_seconds: float = Field(
+        default=10.0,
+        validation_alias=AliasChoices(
+            "HFT_THAIWATER_TIMEOUT_SECONDS", "THAIWATER_TIMEOUT_SECONDS"
+        ),
+        description=(
+            "HTTP timeout in seconds for ThaiWater requests. Public JSON responses "
+            "are small (<1 MB) so the default is short to fail fast on outages."
+        ),
+    )
     mongodb_uri: str = Field(
         default="mongodb://localhost:27017",
         description="Connection URI used by the Mongo-backed forecast repository.",
