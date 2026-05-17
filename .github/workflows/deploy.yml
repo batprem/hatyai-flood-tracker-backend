@@ -18,6 +18,7 @@ jobs:
         with:
           workload_identity_provider: projects/1020107859765/locations/global/workloadIdentityPools/github-pool/providers/github-provider
           service_account: hatyai-cicd@dulcet-timing-340616.iam.gserviceaccount.com
+          token_format: access_token
 
       - uses: google-github-actions/setup-gcloud@v2
 
