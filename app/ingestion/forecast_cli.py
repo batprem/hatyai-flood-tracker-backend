@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -8,7 +9,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import JsonValue
 
 from app.core.config import ForecastRepositoryBackend, get_settings
-from app.ingestion.models import ForecastProvider, ForecastRunStatus
+from app.ingestion.models import (
+    ForecastFrame,
+    ForecastProvider,
+    ForecastRun,
+    ForecastRunStatus,
+    FreshnessStatus,
+)
 from app.ingestion.mongo_repository import build_mongo_repository
 from app.ingestion.normalizer import build_run_record, normalize_frames
 from app.ingestion.providers import build_provider_client
@@ -16,6 +23,18 @@ from app.ingestion.repository import (
     DryRunForecastRepository,
     ForecastRepository,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _cycle_run_id(provider: ForecastProvider, retrieved_at: datetime) -> str:
+    """Build a stable run identifier when no provider run was discovered.
+
+    Used to persist a failure record when discovery itself errors out, so the
+    failure is visible to operators in ``forecast_runs`` instead of vanishing.
+    """
+    cycle = retrieved_at.astimezone(UTC).strftime("%Y%m%d%H")
+    return f"{provider.value}:discovery-failed:{cycle}"
 
 
 async def run_dry_ingestion(
@@ -106,27 +125,119 @@ async def _ingest_into_repository(
     forecast_hours: list[int],
     use_fixtures: bool,
 ) -> tuple[list[JsonValue], list[JsonValue]]:
-    """Ingest each provider's latest run into ``repository`` and return JSON copies."""
+    """Ingest each provider's latest run into ``repository`` and return JSON copies.
+
+    Per-provider failure is contained: a provider that raises during discovery
+    or fetch records a ``FAILED`` run with ``error_reason`` and the loop
+    continues. The persisted run carries ``status=STORED`` only when every
+    requested forecast hour produced a frame, ``status=PARTIAL`` when the
+    provider returned fewer frames than requested but at least one frame, and
+    ``status=FAILED`` when the provider produced nothing.
+    """
     runs: list[JsonValue] = []
     frames: list[JsonValue] = []
     retrieved_at = datetime.now(UTC)
+    requested_hours = sorted(set(forecast_hours))
 
     for provider in providers:
-        client = build_provider_client(provider, forecast_hours, use_fixtures=use_fixtures)
-        run_ref = client.discover_latest_run(retrieved_at)
-        artifacts = client.fetch_run(run_ref)
-        run = build_run_record(run_ref, artifacts, retrieved_at).model_copy(
-            update={"status": ForecastRunStatus.STORED}
-        )
-        normalized_frames = normalize_frames(run_ref, artifacts, retrieved_at)
+        try:
+            run, normalized_frames = await _ingest_one_provider(
+                provider=provider,
+                forecast_hours=requested_hours,
+                retrieved_at=retrieved_at,
+                use_fixtures=use_fixtures,
+            )
+        except Exception as exc:  # pragma: no cover - exercised via tests below
+            logger.exception("provider %s ingestion failed", provider.value)
+            failed_run = _build_failed_run_record(
+                provider=provider,
+                forecast_hours=requested_hours,
+                retrieved_at=retrieved_at,
+                error_reason=f"{type(exc).__name__}: {exc}",
+            )
+            await repository.upsert_run(failed_run)
+            runs.append(failed_run.model_dump(mode="json", by_alias=True))
+            continue
 
         await repository.upsert_run(run)
         await repository.upsert_frames(normalized_frames)
-
         runs.append(run.model_dump(mode="json", by_alias=True))
         frames.extend(frame.model_dump(mode="json", by_alias=True) for frame in normalized_frames)
 
     return runs, frames
+
+
+async def _ingest_one_provider(
+    *,
+    provider: ForecastProvider,
+    forecast_hours: list[int],
+    retrieved_at: datetime,
+    use_fixtures: bool,
+) -> tuple[ForecastRun, list[ForecastFrame]]:
+    """Discover, fetch, and normalize one provider; classify run status by coverage.
+
+    The current provider clients are atomic per run: ``fetch_run`` either
+    returns every requested forecast hour or raises. Classification still
+    distinguishes ``STORED`` (full coverage), ``PARTIAL`` (some artifacts
+    but fewer than requested), and ``FAILED`` (no artifacts) so downstream
+    operators can see partial coverage if a future client returns fewer
+    frames without raising.
+    """
+    client = build_provider_client(provider, forecast_hours, use_fixtures=use_fixtures)
+    run_ref = client.discover_latest_run(retrieved_at)
+    artifacts = client.fetch_run(run_ref)
+    normalized_frames = normalize_frames(run_ref, artifacts, retrieved_at)
+
+    base_run = build_run_record(run_ref, artifacts, retrieved_at)
+    requested_count = len(forecast_hours)
+    produced_count = len(artifacts)
+    if produced_count == requested_count and produced_count > 0:
+        status = ForecastRunStatus.STORED
+        error_reason: str | None = None
+    elif produced_count > 0:
+        status = ForecastRunStatus.PARTIAL
+        error_reason = (
+            f"provider returned {produced_count} of {requested_count} requested forecast hours"
+        )
+    else:
+        status = ForecastRunStatus.FAILED
+        error_reason = "provider returned no forecast artifacts"
+
+    run = base_run.model_copy(update={"status": status, "error_reason": error_reason})
+    return run, normalized_frames
+
+
+def _build_failed_run_record(
+    *,
+    provider: ForecastProvider,
+    forecast_hours: list[int],
+    retrieved_at: datetime,
+    error_reason: str,
+) -> ForecastRun:
+    """Build a placeholder ``FAILED`` run when a provider raises before normalization.
+
+    The record is intentionally minimal: there is no run_time to record from
+    the provider so we fall back to ``retrieved_at`` and emit a stable
+    discovery-failed run id so the run can be re-attempted idempotently on
+    the next cron tick.
+    """
+    return ForecastRun(
+        run_id=_cycle_run_id(provider, retrieved_at),
+        provider=provider,
+        model=provider.value,
+        product="unknown",
+        run_time=retrieved_at,
+        retrieved_at=retrieved_at,
+        processed_at=retrieved_at,
+        expected_forecast_hours=forecast_hours,
+        source_urls=[],
+        status=ForecastRunStatus.FAILED,
+        freshness_status=FreshnessStatus.FAILED,
+        freshness_threshold_hours=1,
+        license="review-required",
+        attribution=f"{provider.value} provider — ingestion failed before discovery",
+        error_reason=error_reason,
+    )
 
 
 def parse_forecast_hours(value: str) -> list[int]:

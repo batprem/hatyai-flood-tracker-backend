@@ -41,6 +41,8 @@ def build_run_record(
         freshness_status=freshness_status,
         freshness_threshold_hours=run_ref.freshness_threshold_hours,
         license=run_ref.license,
+        license_url=run_ref.license_url,
+        redistribution_note=run_ref.redistribution_note,
         attribution=run_ref.attribution,
     )
 
@@ -89,6 +91,8 @@ def normalize_frames(
                     url=artifact.source_url,
                     product=run_ref.product,
                     license=run_ref.license,
+                    license_url=run_ref.license_url,
+                    redistribution_note=run_ref.redistribution_note,
                     attribution=run_ref.attribution,
                     raw_artifact_ref=artifact.raw_artifact_ref,
                 ),

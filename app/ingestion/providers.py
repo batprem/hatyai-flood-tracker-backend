@@ -8,7 +8,14 @@ from app.ingestion.models import ForecastProvider
 
 @dataclass(frozen=True)
 class ProviderRunRef:
-    """Reference a provider model run discovered from provider metadata."""
+    """Reference a provider model run discovered from provider metadata.
+
+    ``license`` carries the short SPDX/terms identifier. ``license_url`` and
+    ``redistribution_note`` carry the production-gate detail (license URL and
+    a redistribution + caching decision string) so downstream records satisfy
+    the ``docs/data-sources.md`` License Notes gate. They are optional so the
+    fixture clients can keep using the short form until cleared.
+    """
 
     provider: ForecastProvider
     model: str
@@ -18,6 +25,8 @@ class ProviderRunRef:
     freshness_threshold_hours: int
     license: str
     attribution: str
+    license_url: str | None = None
+    redistribution_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -61,6 +70,8 @@ class FixtureForecastProviderClient:
     license: str
     attribution: str
     provider_accumulation_semantics: str
+    license_url: str | None = None
+    redistribution_note: str | None = None
 
     def discover_latest_run(self, now: datetime) -> ProviderRunRef:
         """Resolve the latest scheduled run without calling an external service."""
@@ -90,6 +101,8 @@ class FixtureForecastProviderClient:
             freshness_threshold_hours=self.freshness_threshold_hours,
             license=self.license,
             attribution=self.attribution,
+            license_url=self.license_url,
+            redistribution_note=self.redistribution_note,
         )
 
     def fetch_run(self, run_ref: ProviderRunRef) -> list[ProviderFrameArtifact]:
