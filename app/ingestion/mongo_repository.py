@@ -129,8 +129,7 @@ class MongoForecastRepository:
         )
         await self._frames.create_index(
             [("frameId", ASCENDING)],
-            name="frameId_unique",
-            unique=True,
+            name="frameId",
         )
         await self._frames.create_index(
             [
