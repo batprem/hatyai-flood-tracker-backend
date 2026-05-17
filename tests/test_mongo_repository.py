@@ -174,7 +174,7 @@ class MongoForecastRepositoryTests(unittest.IsolatedAsyncioTestCase):
         repository = _build_repository()
         await repository.ensure_indexes()
 
-        runs, frames = await _ingest_into_repository(
+        runs, frames, failures = await _ingest_into_repository(
             repository,
             providers=[ForecastProvider.GFS],
             forecast_hours=[6],
@@ -182,6 +182,7 @@ class MongoForecastRepositoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(runs), 1)
         self.assertEqual(len(frames), 1)
+        self.assertEqual(failures, [])
 
         stored_runs = await repository.database[FORECAST_RUNS_COLLECTION].count_documents({})
         stored_frames = await repository.database[FORECAST_FRAMES_COLLECTION].count_documents({})

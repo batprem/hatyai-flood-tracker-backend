@@ -1,9 +1,19 @@
+import contextlib
+import io
+import json
+import logging
+import sys
 import unittest
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest import mock
 
+from app.ingestion import forecast_cli
 from app.ingestion.forecast_cli import run_dry_ingestion
-from app.ingestion.models import ForecastProvider, ForecastRunStatus, FreshnessStatus
+from app.ingestion.models import (
+    ForecastProvider,
+    ForecastRunStatus,
+    FreshnessStatus,
+)
 from app.ingestion.normalizer import build_run_record, normalize_frames
 from app.ingestion.providers import build_provider_client
 from app.ingestion.repository import DryRunForecastRepository
@@ -21,6 +31,7 @@ class ForecastIngestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["mode"], "dry-run")
         self.assertEqual(len(payload["runs"]), 2)
         self.assertEqual(len(payload["frames"]), 2)
+        self.assertEqual(payload["failures"], [])
         self.assertIn(
             payload["freshness"]["status"],
             {FreshnessStatus.FRESH, FreshnessStatus.STALE},
@@ -59,6 +70,7 @@ class ForecastIngestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["status"], ForecastRunStatus.STORED.value)
         self.assertEqual(run["errorReason"], None)
         self.assertEqual(len(payload["frames"]), 2)
+        self.assertEqual(payload["failures"], [])
 
     async def test_partial_provider_failure_records_failed_run_and_continues(
         self,
@@ -85,7 +97,7 @@ class ForecastIngestionTests(unittest.IsolatedAsyncioTestCase):
                 return _FailingClient()
             return real_build(provider, forecast_hours, use_fixtures=use_fixtures)
 
-        with patch(
+        with mock.patch(
             "app.ingestion.forecast_cli.build_provider_client",
             side_effect=_fault_injecting_build,
         ):
@@ -112,6 +124,66 @@ class ForecastIngestionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(payload["frames"]), 2)
         for frame in payload["frames"]:
             self.assertEqual(frame["provider"], "gfs")
+        # Failure also surfaces in the failures list for sys.exit detection.
+        self.assertEqual(len(payload["failures"]), 1)
+        self.assertEqual(payload["failures"][0]["provider"], "ecmwf_open_data")
+
+
+class ForecastCliExitCodeTests(unittest.TestCase):
+    def test_main_exits_non_zero_when_provider_fails(self) -> None:
+        argv = [
+            "forecast_cli",
+            "--provider",
+            "gfs",
+            "--forecast-hours",
+            "6",
+            "--use-fixtures",
+        ]
+
+        def boom(
+            provider: ForecastProvider,
+            forecast_hours: list[int],
+            *,
+            use_fixtures: bool,
+        ) -> object:
+            raise RuntimeError("provider unavailable")
+
+        captured = io.StringIO()
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(forecast_cli, "build_provider_client", side_effect=boom),
+            contextlib.redirect_stdout(captured),
+            self.assertLogs(forecast_cli.logger, level=logging.ERROR),
+            self.assertRaises(SystemExit) as exit_ctx,
+        ):
+            forecast_cli.main()
+
+        self.assertEqual(exit_ctx.exception.code, 1)
+        payload = json.loads(captured.getvalue())
+        self.assertEqual(len(payload["runs"]), 1)
+        self.assertEqual(payload["runs"][0]["status"], ForecastRunStatus.FAILED.value)
+        self.assertEqual(len(payload["failures"]), 1)
+        self.assertEqual(payload["failures"][0]["provider"], "gfs")
+
+    def test_main_exits_zero_on_success(self) -> None:
+        argv = [
+            "forecast_cli",
+            "--provider",
+            "gfs",
+            "--forecast-hours",
+            "6",
+            "--use-fixtures",
+        ]
+        captured = io.StringIO()
+        with (
+            mock.patch.object(sys, "argv", argv),
+            contextlib.redirect_stdout(captured),
+        ):
+            forecast_cli.main()
+
+        payload = json.loads(captured.getvalue())
+        self.assertEqual(payload["failures"], [])
+        self.assertGreaterEqual(len(payload["runs"]), 1)
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import json
 import logging
+import sys
 from datetime import UTC, datetime
 from enum import StrEnum
 
@@ -58,7 +59,7 @@ async def run_dry_ingestion(
             available (currently GFS).
     """
     repo = repository if repository is not None else DryRunForecastRepository()
-    runs, frames = await _ingest_into_repository(
+    runs, frames, failures = await _ingest_into_repository(
         repo,
         providers=providers,
         forecast_hours=forecast_hours,
@@ -69,6 +70,7 @@ async def run_dry_ingestion(
         "mode": "dry-run",
         "runs": runs,
         "frames": frames,
+        "failures": failures,
         "freshness": to_json_value(await repo.freshness_summary()),
     }
     if include_mongo_preview:
@@ -98,7 +100,7 @@ async def run_mongo_ingestion(
     try:
         repository = build_mongo_repository(client, mongodb_database)
         await repository.ensure_indexes()
-        runs, frames = await _ingest_into_repository(
+        runs, frames, failures = await _ingest_into_repository(
             repository,
             providers=providers,
             forecast_hours=forecast_hours,
@@ -113,6 +115,7 @@ async def run_mongo_ingestion(
         "database": mongodb_database,
         "runs": runs,
         "frames": frames,
+        "failures": failures,
         "freshness": freshness,
     }
     return payload
@@ -124,7 +127,7 @@ async def _ingest_into_repository(
     providers: list[ForecastProvider],
     forecast_hours: list[int],
     use_fixtures: bool,
-) -> tuple[list[JsonValue], list[JsonValue]]:
+) -> tuple[list[JsonValue], list[JsonValue], list[JsonValue]]:
     """Ingest each provider's latest run into ``repository`` and return JSON copies.
 
     Per-provider failure is contained: a provider that raises during discovery
@@ -133,9 +136,16 @@ async def _ingest_into_repository(
     requested forecast hour produced a frame, ``status=PARTIAL`` when the
     provider returned fewer frames than requested but at least one frame, and
     ``status=FAILED`` when the provider produced nothing.
+
+    Returns:
+        Tuple of ``(runs, frames, failures)`` where ``runs`` includes both
+        successful and failed run records and ``failures`` is a list of
+        per-provider failure descriptors for easy detection. The list is
+        empty on full success.
     """
     runs: list[JsonValue] = []
     frames: list[JsonValue] = []
+    failures: list[JsonValue] = []
     retrieved_at = datetime.now(UTC)
     requested_hours = sorted(set(forecast_hours))
 
@@ -156,7 +166,15 @@ async def _ingest_into_repository(
                 error_reason=f"{type(exc).__name__}: {exc}",
             )
             await repository.upsert_run(failed_run)
-            runs.append(failed_run.model_dump(mode="json", by_alias=True))
+            run_doc = failed_run.model_dump(mode="json", by_alias=True)
+            runs.append(run_doc)
+            failures.append(
+                {
+                    "provider": provider.value,
+                    "errorReason": failed_run.error_reason,
+                    "runId": failed_run.run_id,
+                }
+            )
             continue
 
         await repository.upsert_run(run)
@@ -164,7 +182,7 @@ async def _ingest_into_repository(
         runs.append(run.model_dump(mode="json", by_alias=True))
         frames.extend(frame.model_dump(mode="json", by_alias=True) for frame in normalized_frames)
 
-    return runs, frames
+    return runs, frames, failures
 
 
 async def _ingest_one_provider(
@@ -323,7 +341,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
-    """Run the forecast ingestion CLI against the configured backend."""
+    """Run the forecast ingestion CLI against the configured backend.
+
+    Exits non-zero whenever any provider invocation fails so the Cloud Run
+    Job surfaces failed runs as failed executions. A ``failed`` ``forecast_runs``
+    row is still written for each failed provider before exit.
+    """
     args = build_parser().parse_args()
     settings = get_settings()
     use_mongo = args.mongo or (
@@ -350,6 +373,10 @@ def main() -> None:
             )
         )
     print(json.dumps(payload, indent=2, sort_keys=True))
+
+    failures = payload.get("failures")
+    if isinstance(failures, list) and failures:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
