@@ -31,6 +31,6 @@ jobs:
             --region asia-southeast1 \
             --platform managed \
             --allow-unauthenticated \
-            --set-env-vars "HFT_FORECAST_REPOSITORY_BACKEND=dry_run,HFT_MONGODB_URI=${MONGODB_URI},HFT_MONGODB_DATABASE=main,HFT_CORS_ORIGIN_REGEX=https://.*\\.run\\.app,HFT_FRONTEND_ORIGIN=https://hatyai-flood-frontend-1020107859765.asia-southeast1.run.app" \
+            --set-env-vars "HFT_FORECAST_REPOSITORY_BACKEND=mongo,HFT_MONGODB_URI=${MONGODB_URI},HFT_MONGODB_DATABASE=main,HFT_CORS_ORIGIN_REGEX=https://.*\\.run\\.app,HFT_FRONTEND_ORIGIN=https://hatyai-flood-frontend-1020107859765.asia-southeast1.run.app" \
             --project dulcet-timing-340616 \
             --quiet
