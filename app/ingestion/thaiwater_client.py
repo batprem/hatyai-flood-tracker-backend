@@ -183,7 +183,12 @@ class StationObservation(BaseModel):
         return value.astimezone(UTC)
 
     def is_fresh(self, *, now: datetime, max_age: timedelta) -> bool:
-        """Return True when ``observed_at`` is within ``max_age`` of ``now``."""
+        """Return True when ``observed_at`` is within ``max_age`` of ``now``.
+
+        Args:
+            now (datetime): Current reference time to compare against.
+            max_age (timedelta): Maximum age tolerance.
+        """
         return (now - self.observed_at) <= max_age
 
 

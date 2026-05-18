@@ -60,7 +60,11 @@ class StationObservationRepository(Protocol):
         ...
 
     async def upsert_many(self, observations: list[StationObservation]) -> None:
-        """Persist a batch of observations idempotently."""
+        """Persist a batch of observations idempotently.
+
+        Args:
+            observations (list[StationObservation]): List of station observations to persist.
+        """
         ...
 
     async def latest_per_station(
@@ -68,7 +72,11 @@ class StationObservationRepository(Protocol):
         *,
         station_ids: list[str] | None = None,
     ) -> list[StationObservation]:
-        """Return the most recent observation per station, optionally filtered."""
+        """Return the most recent observation per station, optionally filtered.
+
+        Args:
+            station_ids (list[str] | None): Filter to specific stations. Defaults to ``None``.
+        """
         ...
 
 
@@ -87,7 +95,11 @@ class DryRunStationRepository:
         """No-op for the in-memory backend."""
 
     async def upsert_many(self, observations: list[StationObservation]) -> None:
-        """Replace existing records keyed on (station_id, observed_at)."""
+        """Replace existing records keyed on (station_id, observed_at).
+
+        Args:
+            observations (list[StationObservation]): List of station observations to upsert.
+        """
         for record in observations:
             self._records[(record.station_id, record.observed_at)] = record
 
@@ -96,7 +108,11 @@ class DryRunStationRepository:
         *,
         station_ids: list[str] | None = None,
     ) -> list[StationObservation]:
-        """Return the latest observation per station from the in-memory store."""
+        """Return the latest observation per station from the in-memory store.
+
+        Args:
+            station_ids (list[str] | None): Filter to specific stations. Defaults to ``None``.
+        """
         latest: dict[str, StationObservation] = {}
         for record in self._records.values():
             if station_ids is not None and record.station_id not in station_ids:
@@ -168,6 +184,9 @@ class MongoStationRepository:
         ``replace_one`` with the standard query path. We instead delete the
         matching keys and insert the batch, keeping each ``(station, time)``
         pair unique.
+
+        Args:
+            observations (list[StationObservation]): List of station observations to upsert.
         """
         if not observations:
             return
@@ -184,7 +203,11 @@ class MongoStationRepository:
         *,
         station_ids: list[str] | None = None,
     ) -> list[StationObservation]:
-        """Return the most recent record per station via an aggregation pipeline."""
+        """Return the most recent record per station via an aggregation pipeline.
+
+        Args:
+            station_ids (list[str] | None): Filter to specific stations. Defaults to ``None``.
+        """
         match: dict[str, object] = {}
         if station_ids is not None:
             match[STATION_METADATA_FIELD] = {"$in": station_ids}
@@ -209,7 +232,12 @@ class MongoStationRepository:
 def build_mongo_station_repository(
     client: AsyncIOMotorClient, database_name: str
 ) -> MongoStationRepository:
-    """Create a :class:`MongoStationRepository` bound to ``database_name``."""
+    """Create a :class:`MongoStationRepository` bound to ``database_name``.
+
+    Args:
+        client (AsyncIOMotorClient): Motor async MongoDB client.
+        database_name (str): Name of the MongoDB database.
+    """
     database = client[database_name]
     return MongoStationRepository(database)
 

@@ -19,7 +19,11 @@ DEFAULT_AREA_NAME = "hatyai_utapao_songkhla_phase1"
 
 
 def to_public_frame(frame: ForecastFrame) -> ForecastFramePublic:
-    """Map an internal normalized frame to its public response model."""
+    """Map an internal normalized frame to its public response model.
+
+    Args:
+        frame (ForecastFrame): Internal normalized forecast frame.
+    """
     return ForecastFramePublic(
         frame_id=frame.frame_id,
         run_id=frame.run_id,
@@ -69,7 +73,12 @@ def build_freshness_block(
     summary: MongoDocument,
     frame_count: int,
 ) -> ForecastFrameFreshness:
-    """Translate the repository freshness document into the public freshness block."""
+    """Translate the repository freshness document into the public freshness block.
+
+    Args:
+        summary (MongoDocument): Repository freshness summary.
+        frame_count (int): Number of frames matching the query.
+    """
     raw_status = summary.get("status")
     status = _resolve_freshness_status(raw_status)
     provider = _optional_str(summary.get("provider"))
@@ -99,7 +108,16 @@ async def list_forecast_frames(
     valid_time_from: datetime | None,
     valid_time_to: datetime | None,
 ) -> ForecastFramesResponse:
-    """Read frames through the repository and return the public response."""
+    """Read frames through the repository and return the public response.
+
+    Args:
+        repository (ForecastRepository): Forecast repository instance.
+        provider (str | None): Filter by normalized provider.
+        model (str | None): Filter by normalized model name.
+        area (str | None): Configured area name.
+        valid_time_from (datetime | None): Lower bound on validTime.
+        valid_time_to (datetime | None): Upper bound on validTime.
+    """
     resolved_area = area or DEFAULT_AREA_NAME
     frames = await repository.list_frames(
         provider=provider,

@@ -84,17 +84,30 @@ def utc_now() -> datetime:
 
 
 def score_to_level(score: int) -> RiskLevel:
-    """Convert a bounded risk score to its public level."""
+    """Convert a bounded risk score to its public level.
+
+    Args:
+        score (int): Numeric risk score (0-3).
+    """
     return SCORE_LEVELS[max(0, min(3, score))]
 
 
 def level_to_score(level: RiskLevel) -> int:
-    """Convert a public risk level to its numeric score."""
+    """Convert a public risk level to its numeric score.
+
+    Args:
+        level (RiskLevel): Public risk level.
+    """
     return LEVEL_SCORES[level]
 
 
 def score_rainfall(rainfall_mm: float, threshold: RainfallThreshold) -> RiskLevel:
-    """Score rainfall using inclusive lower bounds for each threshold."""
+    """Score rainfall using inclusive lower bounds for each threshold.
+
+    Args:
+        rainfall_mm (float): Total accumulated rainfall in mm.
+        threshold (RainfallThreshold): Threshold configuration for the accumulation window.
+    """
     if rainfall_mm >= threshold.red_mm:
         return RiskLevel.RED
     if rainfall_mm >= threshold.orange_mm:
@@ -156,7 +169,14 @@ def score_water_level(
     critical_level_m: float,
     watch_ratio: float,
 ) -> RiskLevel:
-    """Score station water level with a derived watch threshold."""
+    """Score station water level with a derived watch threshold.
+
+    Args:
+        water_level_m (float): Observed water level in metres.
+        warning_level_m (float): Warning threshold in metres.
+        critical_level_m (float): Critical/danger threshold in metres.
+        watch_ratio (float): Ratio to derive watch threshold from warning level.
+    """
     watch_level_m = warning_level_m * watch_ratio
     if water_level_m >= critical_level_m:
         return RiskLevel.RED
@@ -174,7 +194,15 @@ def calculate_current_risk(
     settings: RiskRuleSettings,
     generated_at: datetime | None = None,
 ) -> CurrentRiskResponse:
-    """Calculate current flood risk from normalized rainfall and station inputs."""
+    """Calculate current flood risk from normalized rainfall and station inputs.
+
+    Args:
+        forecasts (Sequence[RainfallRiskInput]): Rainfall forecast inputs.
+        water_levels (Sequence[WaterLevelRiskInput]): Station observation inputs.
+        settings (RiskRuleSettings): Risk rule configuration and thresholds.
+        generated_at (datetime | None): Timestamp of risk generation.
+            Defaults to ``None``.
+    """
     generated_at = generated_at or utc_now()
     sources = sorted(
         {forecast.source for forecast in forecasts} | {station.source for station in water_levels}

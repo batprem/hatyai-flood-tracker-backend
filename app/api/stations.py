@@ -33,6 +33,15 @@ async def read_water_levels(
     ``stations`` list and a ``source`` suffix (``:stale`` or
     ``:unavailable``) so the risk engine and frontend can degrade
     gracefully without showing a stale all-clear.
+
+    Args:
+        settings (Settings): Application settings injected via dependency.
+        client (StationObservationClient): ThaiWater client injected via dependency.
+        repository (StationObservationRepository | None): Station repository or None.
+            Defaults to ``None``.
+
+    Returns:
+        A response with current water-level observations and freshness metadata.
     """
     return await get_water_levels(
         client=client,

@@ -132,7 +132,11 @@ class ForecastRun(BaseModel):
     @field_validator("run_time", "retrieved_at", "processed_at")
     @classmethod
     def require_timezone(cls, value: datetime | None) -> datetime | None:
-        """Require timezone-aware datetimes for storage adapters."""
+        """Require timezone-aware datetimes for storage adapters.
+
+        Args:
+            value (datetime | None): Datetime value to validate.
+        """
         if value is None:
             return value
         if value.tzinfo is None or value.utcoffset() is None:
@@ -180,7 +184,11 @@ class ForecastFrame(BaseModel):
     )
     @classmethod
     def require_timezone(cls, value: datetime) -> datetime:
-        """Require timezone-aware datetimes for storage adapters."""
+        """Require timezone-aware datetimes for storage adapters.
+
+        Args:
+            value (datetime): Datetime value to validate.
+        """
         if value.tzinfo is None or value.utcoffset() is None:
             msg = "forecast timestamps must be timezone-aware"
             raise ValueError(msg)
@@ -189,7 +197,11 @@ class ForecastFrame(BaseModel):
     @field_validator("values_mm")
     @classmethod
     def require_non_negative_values(cls, value: list[float]) -> list[float]:
-        """Reject negative rainfall values after unit normalization."""
+        """Reject negative rainfall values after unit normalization.
+
+        Args:
+            value (list[float]): List of rainfall values in mm.
+        """
         if not value:
             msg = "forecast frame values cannot be empty"
             raise ValueError(msg)

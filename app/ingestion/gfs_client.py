@@ -128,6 +128,9 @@ class GfsForecastProviderClient:
         responds with HTTP 200 is selected, provided it is still within the
         freshness threshold. This avoids selecting a future or unpublished
         cycle.
+
+        Args:
+            now (datetime): Current UTC reference time used to identify candidate cycles.
         """
         resolved_now = now.astimezone(UTC)
         first_hour = self.forecast_hours[0]
@@ -159,7 +162,11 @@ class GfsForecastProviderClient:
         raise GfsIngestionError(msg)
 
     def fetch_run(self, run_ref: ProviderRunRef) -> list[ProviderFrameArtifact]:
-        """Download and decode each forecast hour into a frame artifact."""
+        """Download and decode each forecast hour into a frame artifact.
+
+        Args:
+            run_ref (ProviderRunRef): Reference to the forecast run to fetch.
+        """
         if run_ref.provider is not ForecastProvider.GFS:
             msg = f"GfsForecastProviderClient cannot fetch provider {run_ref.provider}"
             raise GfsIngestionError(msg)
@@ -313,9 +320,21 @@ class _EccodesMessage(Protocol):
     below keeps the cast to a concrete type confined to the eccodes boundary.
     """
 
-    def get(self, key: str) -> object: ...
+    def get(self, key: str) -> object:
+        """Get a scalar value from the GRIB2 message.
 
-    def get_array(self, key: str) -> object: ...
+        Args:
+            key (str): Message key to retrieve.
+        """
+        ...
+
+    def get_array(self, key: str) -> object:
+        """Get an array value from the GRIB2 message.
+
+        Args:
+            key (str): Message key to retrieve.
+        """
+        ...
 
 
 def _get_int(message: _EccodesMessage, key: str) -> int:
@@ -372,6 +391,10 @@ def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMes
     ``stepRange`` string is preserved verbatim in
     ``providerAccumulationSemantics`` so downstream totals never silently mix
     incompatible accumulation periods.
+
+    Args:
+        grib_bytes (bytes): Raw bytes of one GFS APCP GRIB2 file.
+        forecast_hour (int): Expected forecast end step (hours); used for validation.
     """
     candidates: list[_ApcpCandidate] = []
     with eccodes.MemoryReader(grib_bytes) as reader:
@@ -465,7 +488,15 @@ def build_gfs_client(
     freshness_threshold_hours: int | None = None,
     http_client_factory: HttpClientFactory | None = None,
 ) -> GfsForecastProviderClient:
-    """Build a ``GfsForecastProviderClient`` with sensible defaults."""
+    """Build a ``GfsForecastProviderClient`` with sensible defaults.
+
+    Args:
+        forecast_hours (Sequence[int]): Forecast lead-times (hours) to retrieve.
+        bbox (GfsBoundingBox): Lat/lon bounding box for subregion subset.
+        cycle_hours (Sequence[int] | None): Override GFS cycle hours. Defaults to ``None``.
+        freshness_threshold_hours (int | None): Override freshness window. Defaults to ``None``.
+        http_client_factory (HttpClientFactory | None): Override HTTP client. Defaults to ``None``.
+    """
     hours = tuple(sorted({int(hour) for hour in forecast_hours}))
     if not hours:
         msg = "at least one forecast hour is required"

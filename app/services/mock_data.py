@@ -104,7 +104,11 @@ def get_water_levels() -> WaterLevelResponse:
 
 
 def get_current_risk(settings: RiskRuleSettings) -> CurrentRiskResponse:
-    """Calculate the Phase 1 rule-based risk summary from normalized mock inputs."""
+    """Calculate the Phase 1 rule-based risk summary from normalized mock inputs.
+
+    Args:
+        settings (RiskRuleSettings): Risk rule configuration.
+    """
     rainfall = get_rainfall_forecast()
     water_levels = get_water_levels()
     forecasts = [

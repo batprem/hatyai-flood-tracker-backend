@@ -24,7 +24,11 @@ from app.ingestion.thaiwater_client import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    """Construct lifespan-managed resources, including provider clients and repositories."""
+    """Construct lifespan-managed resources, including provider clients and repositories.
+
+    Args:
+        app (FastAPI): The FastAPI application to configure.
+    """
     if not hasattr(app.state, "settings"):
         app.state.settings = get_settings()
     settings: Settings = app.state.settings
@@ -91,7 +95,15 @@ def create_app(
     station_repository: StationObservationRepository | None = None,
     thaiwater_client: ThaiwaterStationClient | None = None,
 ) -> FastAPI:
-    """Create and configure the FastAPI application."""
+    """Create and configure the FastAPI application.
+
+    Args:
+        settings (Settings | None): Application settings. Defaults to ``None``.
+        forecast_repository (ForecastRepository | None): Forecast repository. Defaults to ``None``.
+        station_repository (StationObservationRepository | None): Station repository.
+            Defaults to ``None``.
+        thaiwater_client (ThaiwaterStationClient | None): ThaiWater client. Defaults to ``None``.
+    """
     resolved_settings = settings or get_settings()
     app = FastAPI(
         title=resolved_settings.app_name,

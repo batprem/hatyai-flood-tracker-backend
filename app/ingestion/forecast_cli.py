@@ -259,7 +259,11 @@ def _build_failed_run_record(
 
 
 def parse_forecast_hours(value: str) -> list[int]:
-    """Parse a comma-separated forecast-hour list."""
+    """Parse a comma-separated forecast-hour list.
+
+    Args:
+        value (str): Comma-separated string of positive integers.
+    """
     try:
         hours = [int(item.strip()) for item in value.split(",") if item.strip()]
     except ValueError as exc:
@@ -273,7 +277,11 @@ def parse_forecast_hours(value: str) -> list[int]:
 
 
 def parse_provider(value: str) -> list[ForecastProvider]:
-    """Parse provider selection for the dry-run CLI."""
+    """Parse provider selection for the dry-run CLI.
+
+    Args:
+        value (str): Provider name or 'all' to select all providers.
+    """
     if value == "all":
         return [ForecastProvider.GFS, ForecastProvider.ECMWF_OPEN_DATA]
     try:
@@ -285,7 +293,11 @@ def parse_provider(value: str) -> list[ForecastProvider]:
 
 
 def to_json_value(value: object) -> JsonValue:
-    """Convert native-datetime Mongo preview objects to JSON-safe values."""
+    """Convert native-datetime Mongo preview objects to JSON-safe values.
+
+    Args:
+        value (object): A value that may contain datetime, enum, or nested structures.
+    """
     if value is None or isinstance(value, str | int | float | bool):
         return value
     if isinstance(value, datetime):

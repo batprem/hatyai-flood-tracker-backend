@@ -15,7 +15,11 @@ router = APIRouter(prefix="/forecast", tags=["forecast"])
 
 @router.get("/rainfall", response_model=RainfallForecastResponse)
 async def read_rainfall_forecast() -> RainfallForecastResponse:
-    """Return normalized mock rainfall forecasts."""
+    """Return normalized mock rainfall forecasts.
+
+    Returns:
+        A response with mock rainfall forecast frames for Phase 1 development.
+    """
     return get_rainfall_forecast()
 
 
@@ -57,7 +61,21 @@ async def read_forecast_frames(
         ),
     ] = DEFAULT_AREA_NAME,
 ) -> ForecastFramesResponse:
-    """Return normalized forecast frames with a top-level freshness block."""
+    """Return normalized forecast frames with a top-level freshness block.
+
+    Args:
+        repository (ForecastRepository): Forecast repository injected via dependency.
+        provider (str | None): Normalized provider filter, e.g. 'gfs'. Defaults to ``None``.
+        model (str | None): Normalized model name filter. Defaults to ``None``.
+        valid_time_from (datetime | None): Lower bound on validTime (ISO 8601 UTC).
+            Defaults to ``None``.
+        valid_time_to (datetime | None): Upper bound on validTime (ISO 8601 UTC).
+            Defaults to ``None``.
+        area (str | None): Configured area name. Defaults to ``DEFAULT_AREA_NAME``.
+
+    Returns:
+        A response wrapping normalized forecast frames with freshness metadata.
+    """
     return await list_forecast_frames(
         repository,
         provider=provider,

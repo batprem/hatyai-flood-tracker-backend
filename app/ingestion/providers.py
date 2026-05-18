@@ -48,11 +48,19 @@ class ForecastProviderClient(Protocol):
     """Discover and fetch forecast model runs."""
 
     def discover_latest_run(self, now: datetime) -> ProviderRunRef:
-        """Return the latest provider run available for ingestion."""
+        """Return the latest provider run available for ingestion.
+
+        Args:
+            now (datetime): Current UTC reference time used to identify candidate cycles.
+        """
         ...
 
     def fetch_run(self, run_ref: ProviderRunRef) -> list[ProviderFrameArtifact]:
-        """Fetch forecast artifacts for a discovered run."""
+        """Fetch forecast artifacts for a discovered run.
+
+        Args:
+            run_ref (ProviderRunRef): Reference to the forecast run to fetch.
+        """
         ...
 
 
@@ -74,7 +82,11 @@ class FixtureForecastProviderClient:
     redistribution_note: str | None = None
 
     def discover_latest_run(self, now: datetime) -> ProviderRunRef:
-        """Resolve the latest scheduled run without calling an external service."""
+        """Resolve the latest scheduled run without calling an external service.
+
+        Args:
+            now (datetime): Current UTC reference time used to identify candidate cycles.
+        """
         resolved_now = now.astimezone(UTC)
         cycle_hour = max(
             (hour for hour in self.cycle_hours if hour <= resolved_now.hour),
@@ -106,7 +118,11 @@ class FixtureForecastProviderClient:
         )
 
     def fetch_run(self, run_ref: ProviderRunRef) -> list[ProviderFrameArtifact]:
-        """Return tiny clipped precipitation grids shaped like provider artifacts."""
+        """Return tiny clipped precipitation grids shaped like provider artifacts.
+
+        Args:
+            run_ref (ProviderRunRef): Reference to the forecast run to fetch.
+        """
         artifacts: list[ProviderFrameArtifact] = []
         for forecast_hour in self.forecast_hours:
             artifacts.append(

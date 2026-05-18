@@ -98,7 +98,15 @@ class EcmwfBoundingBox:
     north: float
 
     def contains(self, lat: float, lon: float) -> bool:
-        """Return True if the point falls within this bounding box."""
+        """Return True if the point falls within this bounding box.
+
+        Args:
+            lat (float): Latitude in degrees.
+            lon (float): Longitude in degrees.
+
+        Returns:
+            ``True`` when the point lies inside the bbox (inclusive), else ``False``.
+        """
         return self.south <= lat <= self.north and self.west <= lon <= self.east
 
 
@@ -396,9 +404,27 @@ class _EcmwfDecodedMessage:
 class _EccodesMessage(Protocol):
     """Minimal typed view of an eccodes message."""
 
-    def get(self, key: str) -> object: ...
+    def get(self, key: str) -> object:
+        """Get a scalar value from the GRIB2 message.
 
-    def get_array(self, key: str) -> object: ...
+        Args:
+            key (str): Message key to retrieve.
+
+        Returns:
+            The raw value associated with ``key``; type depends on the message.
+        """
+        ...
+
+    def get_array(self, key: str) -> object:
+        """Get an array value from the GRIB2 message.
+
+        Args:
+            key (str): Message key to retrieve.
+
+        Returns:
+            The raw array (typically a numpy ndarray) associated with ``key``.
+        """
+        ...
 
 
 def _get_int(message: _EccodesMessage, key: str) -> int:

@@ -10,11 +10,19 @@ class ForecastRepository(Protocol):
     """Store normalized forecast runs and frames."""
 
     async def upsert_run(self, run: ForecastRun) -> None:
-        """Upsert a provider run record."""
+        """Upsert a provider run record.
+
+        Args:
+            run (ForecastRun): The forecast run to upsert.
+        """
         ...
 
     async def upsert_frames(self, frames: list[ForecastFrame]) -> None:
-        """Upsert normalized forecast frame records."""
+        """Upsert normalized forecast frame records.
+
+        Args:
+            frames (list[ForecastFrame]): List of forecast frames to upsert.
+        """
         ...
 
     async def freshness_summary(
@@ -23,7 +31,12 @@ class ForecastRepository(Protocol):
         provider: str | None = None,
         model: str | None = None,
     ) -> MongoDocument:
-        """Return a backend-facing freshness summary, optionally scoped to a provider/model."""
+        """Return a backend-facing freshness summary, optionally scoped to a provider/model.
+
+        Args:
+            provider (str | None): Filter by provider name. Defaults to ``None``.
+            model (str | None): Filter by model name. Defaults to ``None``.
+        """
         ...
 
     async def list_frames(
@@ -35,7 +48,15 @@ class ForecastRepository(Protocol):
         valid_time_from: datetime | None = None,
         valid_time_to: datetime | None = None,
     ) -> list[ForecastFrame]:
-        """List normalized forecast frames matching the supplied filters."""
+        """List normalized forecast frames matching the supplied filters.
+
+        Args:
+            provider (str | None): Filter by provider name. Defaults to ``None``.
+            model (str | None): Filter by model name. Defaults to ``None``.
+            area_name (str | None): Filter by area name. Defaults to ``None``.
+            valid_time_from (datetime | None): Lower bound on validTime. Defaults to ``None``.
+            valid_time_to (datetime | None): Upper bound on validTime. Defaults to ``None``.
+        """
         ...
 
 
@@ -47,12 +68,20 @@ class DryRunForecastRepository:
         self.frames: list[ForecastFrame] = []
 
     async def upsert_run(self, run: ForecastRun) -> None:
-        """Store a run in memory with idempotent run id semantics."""
+        """Store a run in memory with idempotent run id semantics.
+
+        Args:
+            run (ForecastRun): The forecast run to upsert.
+        """
         self.runs = [existing for existing in self.runs if existing.run_id != run.run_id]
         self.runs.append(run)
 
     async def upsert_frames(self, frames: list[ForecastFrame]) -> None:
-        """Store frames in memory with idempotent frame id semantics."""
+        """Store frames in memory with idempotent frame id semantics.
+
+        Args:
+            frames (list[ForecastFrame]): List of forecast frames to upsert.
+        """
         incoming_ids = {frame.frame_id for frame in frames}
         self.frames = [
             existing for existing in self.frames if existing.frame_id not in incoming_ids
@@ -65,7 +94,12 @@ class DryRunForecastRepository:
         provider: str | None = None,
         model: str | None = None,
     ) -> MongoDocument:
-        """Return a simple freshness document for API/operator visibility."""
+        """Return a simple freshness document for API/operator visibility.
+
+        Args:
+            provider (str | None): Filter by provider name. Defaults to ``None``.
+            model (str | None): Filter by model name. Defaults to ``None``.
+        """
         candidates = [
             run
             for run in self.runs
@@ -99,7 +133,15 @@ class DryRunForecastRepository:
         valid_time_from: datetime | None = None,
         valid_time_to: datetime | None = None,
     ) -> list[ForecastFrame]:
-        """Return stored frames filtered by provider, model, area, and valid-time window."""
+        """Return stored frames filtered by provider, model, area, and valid-time window.
+
+        Args:
+            provider (str | None): Filter by provider name. Defaults to ``None``.
+            model (str | None): Filter by model name. Defaults to ``None``.
+            area_name (str | None): Filter by area name. Defaults to ``None``.
+            valid_time_from (datetime | None): Lower bound on validTime. Defaults to ``None``.
+            valid_time_to (datetime | None): Upper bound on validTime. Defaults to ``None``.
+        """
         result: list[ForecastFrame] = []
         for frame in self.frames:
             if provider is not None and frame.provider.value != provider:

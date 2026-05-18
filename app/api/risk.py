@@ -39,6 +39,16 @@ async def read_current_risk(
     ForecastRepository.list_frames. Water-level inputs use real ThaiWater/HAII
     observations; is_mock=False so the risk engine can raise public risk on
     real fresh station data.
+
+    Args:
+        settings (Settings): Application settings injected via dependency.
+        forecast_repository (ForecastRepository): Forecast repository injected via dependency.
+        client (StationObservationClient): ThaiWater client injected via dependency.
+        station_repository (StationObservationRepository | None): Station repository or None.
+            Defaults to ``None``.
+
+    Returns:
+        A rule-based flood risk summary with rainfall and station drivers.
     """
     frames = await forecast_repository.list_frames(area_name=DEFAULT_AREA_NAME)
     rainfall_inputs = build_rainfall_inputs_from_frames(frames)

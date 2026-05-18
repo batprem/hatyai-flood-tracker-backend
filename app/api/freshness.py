@@ -35,6 +35,14 @@ async def read_freshness(
     runs have been ingested yet the endpoint returns ``status='failed'`` with
     a ``reason`` payload rather than 404 so the public UI keeps a stable
     contract while ingestion warms up.
+
+    Args:
+        repository (ForecastRepository): Forecast repository injected via dependency.
+        provider (str | None): Optionally scope freshness to a provider name. Defaults to ``None``.
+        model (str | None): Optionally scope freshness to a model name. Defaults to ``None``.
+
+    Returns:
+        The latest freshness snapshot, or a ``failed`` placeholder if none exist yet.
     """
     summary = await repository.freshness_summary(provider=provider, model=model)
     return _build_report(summary)
