@@ -63,7 +63,7 @@ class StationObservationRepository(Protocol):
         """Persist a batch of observations idempotently.
 
         Args:
-            observations (list[StationObservation]): List of station observations to persist.
+            observations: List of station observations to persist.
         """
         ...
 
@@ -75,7 +75,10 @@ class StationObservationRepository(Protocol):
         """Return the most recent observation per station, optionally filtered.
 
         Args:
-            station_ids (list[str] | None): Filter to specific stations. Defaults to ``None``.
+            station_ids: Filter to specific stations. Defaults to ``None``.
+
+        Returns:
+            List of the latest StationObservation records per station.
         """
         ...
 
@@ -98,7 +101,7 @@ class DryRunStationRepository:
         """Replace existing records keyed on (station_id, observed_at).
 
         Args:
-            observations (list[StationObservation]): List of station observations to upsert.
+            observations: List of station observations to upsert.
         """
         for record in observations:
             self._records[(record.station_id, record.observed_at)] = record
@@ -111,7 +114,10 @@ class DryRunStationRepository:
         """Return the latest observation per station from the in-memory store.
 
         Args:
-            station_ids (list[str] | None): Filter to specific stations. Defaults to ``None``.
+            station_ids: Filter to specific stations. Defaults to ``None``.
+
+        Returns:
+            List of the latest StationObservation records per station.
         """
         latest: dict[str, StationObservation] = {}
         for record in self._records.values():
@@ -186,7 +192,7 @@ class MongoStationRepository:
         pair unique.
 
         Args:
-            observations (list[StationObservation]): List of station observations to upsert.
+            observations: List of station observations to upsert.
         """
         if not observations:
             return
@@ -206,7 +212,10 @@ class MongoStationRepository:
         """Return the most recent record per station via an aggregation pipeline.
 
         Args:
-            station_ids (list[str] | None): Filter to specific stations. Defaults to ``None``.
+            station_ids: Filter to specific stations. Defaults to ``None``.
+
+        Returns:
+            List of the latest StationObservation records per station.
         """
         match: dict[str, object] = {}
         if station_ids is not None:
@@ -235,8 +244,11 @@ def build_mongo_station_repository(
     """Create a :class:`MongoStationRepository` bound to ``database_name``.
 
     Args:
-        client (AsyncIOMotorClient): Motor async MongoDB client.
-        database_name (str): Name of the MongoDB database.
+        client: Motor async MongoDB client.
+        database_name: Name of the MongoDB database.
+
+    Returns:
+        A configured MongoStationRepository instance.
     """
     database = client[database_name]
     return MongoStationRepository(database)

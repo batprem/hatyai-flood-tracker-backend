@@ -37,9 +37,9 @@ async def read_freshness(
     contract while ingestion warms up.
 
     Args:
-        repository (ForecastRepository): Forecast repository injected via dependency.
-        provider (str | None): Optionally scope freshness to a provider name. Defaults to ``None``.
-        model (str | None): Optionally scope freshness to a model name. Defaults to ``None``.
+        repository: Forecast repository injected via dependency.
+        provider: Optionally scope freshness to a provider name. Defaults to ``None``.
+        model: Optionally scope freshness to a model name. Defaults to ``None``.
 
     Returns:
         The latest freshness snapshot, or a ``failed`` placeholder if none exist yet.

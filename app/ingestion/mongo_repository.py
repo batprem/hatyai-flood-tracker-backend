@@ -145,7 +145,7 @@ class MongoForecastRepository:
         """Upsert a run document keyed by ``runId``.
 
         Args:
-            run (ForecastRun): The forecast run to upsert.
+            run: The forecast run to upsert.
         """
         document = _to_mongo_document(run, by_alias=True)
         await self._runs.replace_one(
@@ -164,7 +164,7 @@ class MongoForecastRepository:
         ``metaField`` can be honored without losing the dry-run preview shape.
 
         Args:
-            frames (list[ForecastFrame]): List of forecast frames to upsert.
+            frames: List of forecast frames to upsert.
         """
         if not frames:
             return
@@ -183,8 +183,11 @@ class MongoForecastRepository:
         """Return the latest stored run and frame count for operator visibility.
 
         Args:
-            provider (str | None): Filter by provider name. Defaults to ``None``.
-            model (str | None): Filter by model name. Defaults to ``None``.
+            provider: Filter by provider name. Defaults to ``None``.
+            model: Filter by model name. Defaults to ``None``.
+
+        Returns:
+            Freshness document with status and metadata.
         """
         query: MongoDocument = {}
         if provider is not None:
@@ -223,11 +226,14 @@ class MongoForecastRepository:
         """Return frames matching the supplied filters as Pydantic models.
 
         Args:
-            provider (str | None): Filter by provider name. Defaults to ``None``.
-            model (str | None): Filter by model name. Defaults to ``None``.
-            area_name (str | None): Filter by area name. Defaults to ``None``.
-            valid_time_from (datetime | None): Lower bound on validTime. Defaults to ``None``.
-            valid_time_to (datetime | None): Upper bound on validTime. Defaults to ``None``.
+            provider: Filter by provider name. Defaults to ``None``.
+            model: Filter by model name. Defaults to ``None``.
+            area_name: Filter by area name. Defaults to ``None``.
+            valid_time_from: Lower bound on validTime. Defaults to ``None``.
+            valid_time_to: Upper bound on validTime. Defaults to ``None``.
+
+        Returns:
+            List of ForecastFrame records matching the filters.
         """
         query: MongoDocument = {}
         if provider is not None:
@@ -293,8 +299,11 @@ def build_mongo_repository(
     """Create a :class:`MongoForecastRepository` bound to ``database_name``.
 
     Args:
-        client (AsyncIOMotorClient): Motor async MongoDB client.
-        database_name (str): Name of the MongoDB database.
+        client: Motor async MongoDB client.
+        database_name: Name of the MongoDB database.
+
+    Returns:
+        A configured MongoForecastRepository instance.
     """
     database = client[database_name]
     return MongoForecastRepository(database)

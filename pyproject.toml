@@ -16,6 +16,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mongomock-motor>=0.0.34",
+    "pydoclint>=0.8.4",
     "pytest>=9.0.3",
     "ruff",
     "ty>=0.0.37",
@@ -30,3 +31,10 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.pydoclint]
+style = "google"
+require-return-section-when-returning-nothing = false
+check-return-types = false
+check-class-attributes = false
+arg-type-hints-in-docstring = false

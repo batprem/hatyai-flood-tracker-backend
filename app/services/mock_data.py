@@ -16,12 +16,20 @@ MOCK_SOURCE = "phase-1-normalized-mock"
 
 
 def utc_now() -> datetime:
-    """Return the current timezone-aware UTC timestamp."""
+    """Return the current timezone-aware UTC timestamp.
+
+    Returns:
+        Current UTC datetime.
+    """
     return datetime.now(UTC)
 
 
 def get_rainfall_forecast() -> RainfallForecastResponse:
-    """Return normalized mock rainfall forecasts for target basins."""
+    """Return normalized mock rainfall forecasts for target basins.
+
+    Returns:
+        Mock rainfall forecast response with freshness metadata.
+    """
     generated_at = utc_now()
     valid_at = generated_at.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
 
@@ -59,7 +67,11 @@ def get_rainfall_forecast() -> RainfallForecastResponse:
 
 
 def get_water_levels() -> WaterLevelResponse:
-    """Return normalized mock water-level observations."""
+    """Return normalized mock water-level observations.
+
+    Returns:
+        Mock water-level response with freshness metadata.
+    """
     generated_at = utc_now()
     observed_at = generated_at - timedelta(minutes=5)
 
@@ -107,7 +119,10 @@ def get_current_risk(settings: RiskRuleSettings) -> CurrentRiskResponse:
     """Calculate the Phase 1 rule-based risk summary from normalized mock inputs.
 
     Args:
-        settings (RiskRuleSettings): Risk rule configuration.
+        settings: Risk rule configuration.
+
+    Returns:
+        Mock risk response with area-level risk levels and drivers.
     """
     rainfall = get_rainfall_forecast()
     water_levels = get_water_levels()
@@ -147,7 +162,11 @@ def get_current_risk(settings: RiskRuleSettings) -> CurrentRiskResponse:
 
 
 def get_map_layers() -> MapLayersResponse:
-    """Return public map layer descriptors for the frontend."""
+    """Return public map layer descriptors for the frontend.
+
+    Returns:
+        Map layers response with layer definitions and freshness metadata.
+    """
     generated_at = utc_now()
 
     layers = [

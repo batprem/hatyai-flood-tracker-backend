@@ -35,10 +35,9 @@ async def read_water_levels(
     gracefully without showing a stale all-clear.
 
     Args:
-        settings (Settings): Application settings injected via dependency.
-        client (StationObservationClient): ThaiWater client injected via dependency.
-        repository (StationObservationRepository | None): Station repository or None.
-            Defaults to ``None``.
+        settings: Application settings injected via dependency.
+        client: ThaiWater client injected via dependency.
+        repository: Station repository or None. Defaults to ``None``.
 
     Returns:
         A response with current water-level observations and freshness metadata.

@@ -1,0 +1,25 @@
+name: Backend Lint
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync dev dependencies
+        run: uv sync --dev
+
+      - name: ruff check
+        run: uv run ruff check
+
+      - name: pydoclint (Google style, excludes tests/)
+        run: uv run pydoclint app/ main.py --style=google

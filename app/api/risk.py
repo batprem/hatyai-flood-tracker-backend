@@ -41,11 +41,10 @@ async def read_current_risk(
     real fresh station data.
 
     Args:
-        settings (Settings): Application settings injected via dependency.
-        forecast_repository (ForecastRepository): Forecast repository injected via dependency.
-        client (StationObservationClient): ThaiWater client injected via dependency.
-        station_repository (StationObservationRepository | None): Station repository or None.
-            Defaults to ``None``.
+        settings: Application settings injected via dependency.
+        forecast_repository: Forecast repository injected via dependency.
+        client: ThaiWater client injected via dependency.
+        station_repository: Station repository or None. Defaults to ``None``.
 
     Returns:
         A rule-based flood risk summary with rainfall and station drivers.

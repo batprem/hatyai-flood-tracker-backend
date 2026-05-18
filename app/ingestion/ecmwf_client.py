@@ -101,8 +101,8 @@ class EcmwfBoundingBox:
         """Return True if the point falls within this bounding box.
 
         Args:
-            lat (float): Latitude in degrees.
-            lon (float): Longitude in degrees.
+            lat: Latitude in degrees.
+            lon: Longitude in degrees.
 
         Returns:
             ``True`` when the point lies inside the bbox (inclusive), else ``False``.
@@ -140,6 +140,7 @@ class EcmwfOpenDataProviderClient:
         model: Model name recorded with each frame.
         license: SPDX license identifier for the data (CC-BY-4.0).
         license_url: URL of the license text.
+        redistribution_note: Redistribution and caching terms for this data.
         attribution: Public attribution string for every frame.
         base_url: Base CDN URL; replaceable in tests.
         retries: Number of additional retries for transient HTTP errors.
@@ -408,7 +409,7 @@ class _EccodesMessage(Protocol):
         """Get a scalar value from the GRIB2 message.
 
         Args:
-            key (str): Message key to retrieve.
+            key: Message key to retrieve.
 
         Returns:
             The raw value associated with ``key``; type depends on the message.
@@ -419,7 +420,7 @@ class _EccodesMessage(Protocol):
         """Get an array value from the GRIB2 message.
 
         Args:
-            key (str): Message key to retrieve.
+            key: Message key to retrieve.
 
         Returns:
             The raw array (typically a numpy ndarray) associated with ``key``.
@@ -475,6 +476,14 @@ def _infer_grid_shape(
     unique longitudes and ``height`` equals the number of unique latitudes.
     Coordinate equality is matched at half the grid resolution to absorb
     floating-point noise in the raw GRIB coordinate arrays.
+
+    Args:
+        lats: Latitude values from the clipped GRIB2 message.
+        lons: Longitude values from the clipped GRIB2 message.
+        resolution: Grid resolution in degrees; used for floating-point tolerance.
+
+    Returns:
+        Tuple of (width, height) representing the grid dimensions.
 
     Raises:
         EcmwfIngestionError: When the clipped point count does not equal
@@ -672,13 +681,12 @@ def build_ecmwf_client(
         freshness_threshold_hours: Override freshness window; default is 13.
         base_url: Override CDN base URL (useful for tests).
         http_client_factory: Override the HTTP client factory.
-        license_identifier: Override the short SPDX/terms identifier
-            recorded on every frame and run.
-        license_url: Override the license terms URL recorded on every frame
-            and run (production gate requirement).
-        redistribution_note: Override the redistribution/caching decision
-            string recorded on every frame and run (production gate
-            requirement).
+        license_identifier: Override the short SPDX/terms identifier recorded on every
+            frame and run.
+        license_url: Override the license terms URL recorded on every frame and run
+            (production gate requirement).
+        redistribution_note: Override the redistribution/caching decision string recorded
+            on every frame and run (production gate requirement).
         attribution: Override the public attribution string.
 
     Returns:

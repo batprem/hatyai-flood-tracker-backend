@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Construct lifespan-managed resources, including provider clients and repositories.
 
     Args:
-        app (FastAPI): The FastAPI application to configure.
+        app: The FastAPI application to configure.
     """
     if not hasattr(app.state, "settings"):
         app.state.settings = get_settings()
@@ -98,11 +98,13 @@ def create_app(
     """Create and configure the FastAPI application.
 
     Args:
-        settings (Settings | None): Application settings. Defaults to ``None``.
-        forecast_repository (ForecastRepository | None): Forecast repository. Defaults to ``None``.
-        station_repository (StationObservationRepository | None): Station repository.
-            Defaults to ``None``.
-        thaiwater_client (ThaiwaterStationClient | None): ThaiWater client. Defaults to ``None``.
+        settings: Application settings. Defaults to ``None``.
+        forecast_repository: Forecast repository. Defaults to ``None``.
+        station_repository: Station repository. Defaults to ``None``.
+        thaiwater_client: ThaiWater client. Defaults to ``None``.
+
+    Returns:
+        Configured FastAPI application instance.
     """
     resolved_settings = settings or get_settings()
     app = FastAPI(

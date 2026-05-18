@@ -79,7 +79,11 @@ class WaterLevelRiskInput:
 
 
 def utc_now() -> datetime:
-    """Return the current timezone-aware UTC timestamp."""
+    """Return the current timezone-aware UTC timestamp.
+
+    Returns:
+        Current UTC datetime.
+    """
     return datetime.now(UTC)
 
 
@@ -87,7 +91,10 @@ def score_to_level(score: int) -> RiskLevel:
     """Convert a bounded risk score to its public level.
 
     Args:
-        score (int): Numeric risk score (0-3).
+        score: Numeric risk score (0-3).
+
+    Returns:
+        Public risk level (GREEN, YELLOW, ORANGE, or RED).
     """
     return SCORE_LEVELS[max(0, min(3, score))]
 
@@ -96,7 +103,10 @@ def level_to_score(level: RiskLevel) -> int:
     """Convert a public risk level to its numeric score.
 
     Args:
-        level (RiskLevel): Public risk level.
+        level: Public risk level.
+
+    Returns:
+        Numeric risk score (0-3).
     """
     return LEVEL_SCORES[level]
 
@@ -105,8 +115,11 @@ def score_rainfall(rainfall_mm: float, threshold: RainfallThreshold) -> RiskLeve
     """Score rainfall using inclusive lower bounds for each threshold.
 
     Args:
-        rainfall_mm (float): Total accumulated rainfall in mm.
-        threshold (RainfallThreshold): Threshold configuration for the accumulation window.
+        rainfall_mm: Total accumulated rainfall in mm.
+        threshold: Threshold configuration for the accumulation window.
+
+    Returns:
+        Risk level based on rainfall thresholds.
     """
     if rainfall_mm >= threshold.red_mm:
         return RiskLevel.RED
@@ -172,10 +185,13 @@ def score_water_level(
     """Score station water level with a derived watch threshold.
 
     Args:
-        water_level_m (float): Observed water level in metres.
-        warning_level_m (float): Warning threshold in metres.
-        critical_level_m (float): Critical/danger threshold in metres.
-        watch_ratio (float): Ratio to derive watch threshold from warning level.
+        water_level_m: Observed water level in metres.
+        warning_level_m: Warning threshold in metres.
+        critical_level_m: Critical/danger threshold in metres.
+        watch_ratio: Ratio to derive watch threshold from warning level.
+
+    Returns:
+        Risk level based on water-level thresholds.
     """
     watch_level_m = warning_level_m * watch_ratio
     if water_level_m >= critical_level_m:
@@ -197,11 +213,14 @@ def calculate_current_risk(
     """Calculate current flood risk from normalized rainfall and station inputs.
 
     Args:
-        forecasts (Sequence[RainfallRiskInput]): Rainfall forecast inputs.
-        water_levels (Sequence[WaterLevelRiskInput]): Station observation inputs.
-        settings (RiskRuleSettings): Risk rule configuration and thresholds.
-        generated_at (datetime | None): Timestamp of risk generation.
+        forecasts: Rainfall forecast inputs.
+        water_levels: Station observation inputs.
+        settings: Risk rule configuration and thresholds.
+        generated_at: Timestamp of risk generation.
             Defaults to ``None``.
+
+    Returns:
+        Comprehensive risk response with level, signals, coverage, and public messaging.
     """
     generated_at = generated_at or utc_now()
     sources = sorted(

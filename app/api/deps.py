@@ -9,7 +9,7 @@ def get_forecast_repository(request: Request) -> ForecastRepository:
     """Return the lifespan-managed forecast repository for request handlers.
 
     Args:
-        request (Request): The FastAPI request object providing access to app state.
+        request: The FastAPI request object providing access to app state.
 
     Returns:
         The forecast repository configured during application startup.
@@ -28,7 +28,7 @@ def get_station_observation_client(request: Request) -> StationObservationClient
     """Return the lifespan-managed ThaiWater client for request handlers.
 
     Args:
-        request (Request): The FastAPI request object providing access to app state.
+        request: The FastAPI request object providing access to app state.
 
     Returns:
         The station observation client configured during application startup.
@@ -47,7 +47,7 @@ def get_station_repository(request: Request) -> StationObservationRepository | N
     """Return the lifespan-managed station repository, or None when unconfigured.
 
     Args:
-        request (Request): The FastAPI request object providing access to app state.
+        request: The FastAPI request object providing access to app state.
 
     Returns:
         The station observation repository, or ``None`` when not configured.

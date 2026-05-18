@@ -100,9 +100,8 @@ class GfsForecastProviderClient:
         model: Model name recorded with each frame.
         license: License/attribution review note stored on every frame.
         attribution: Public attribution string for every frame.
-        base_directory_url: Base path used to compose the source URL recorded
-            in provenance (kept distinct from the filter URL used for the
-            actual download so the recorded URL is human-shareable).
+        base_directory_url: Base path used to compose the source URL recorded in provenance.
+        filter_url: NOMADS filter endpoint URL used for server-side subsetting.
         retries: Number of additional retries for transient HTTP errors.
         http_client_factory: Callable returning a configured ``httpx.Client``.
     """
@@ -130,7 +129,14 @@ class GfsForecastProviderClient:
         cycle.
 
         Args:
-            now (datetime): Current UTC reference time used to identify candidate cycles.
+            now: Current UTC reference time used to identify candidate cycles.
+
+        Returns:
+            ProviderRunRef for the most recently published GFS run.
+
+        Raises:
+            GfsIngestionError: When no run is available within the freshness
+                window after checking ``RUN_DISCOVERY_LOOKBACK_CYCLES`` cycles.
         """
         resolved_now = now.astimezone(UTC)
         first_hour = self.forecast_hours[0]
@@ -165,7 +171,15 @@ class GfsForecastProviderClient:
         """Download and decode each forecast hour into a frame artifact.
 
         Args:
-            run_ref (ProviderRunRef): Reference to the forecast run to fetch.
+            run_ref: Reference to the forecast run to fetch.
+
+        Returns:
+            List of ``ProviderFrameArtifact`` records with APCP window accumulation
+            values in mm, ready for the normalizer.
+
+        Raises:
+            GfsIngestionError: When ``run_ref.provider`` is not GFS, or when a
+                download or decode fails after retries.
         """
         if run_ref.provider is not ForecastProvider.GFS:
             msg = f"GfsForecastProviderClient cannot fetch provider {run_ref.provider}"
@@ -324,7 +338,10 @@ class _EccodesMessage(Protocol):
         """Get a scalar value from the GRIB2 message.
 
         Args:
-            key (str): Message key to retrieve.
+            key: Message key to retrieve.
+
+        Returns:
+            Scalar value from the GRIB2 message.
         """
         ...
 
@@ -332,7 +349,10 @@ class _EccodesMessage(Protocol):
         """Get an array value from the GRIB2 message.
 
         Args:
-            key (str): Message key to retrieve.
+            key: Message key to retrieve.
+
+        Returns:
+            Array value from the GRIB2 message.
         """
         ...
 
@@ -393,8 +413,15 @@ def decode_apcp_message(grib_bytes: bytes, forecast_hour: int) -> DecodedApcpMes
     incompatible accumulation periods.
 
     Args:
-        grib_bytes (bytes): Raw bytes of one GFS APCP GRIB2 file.
-        forecast_hour (int): Expected forecast end step (hours); used for validation.
+        grib_bytes: Raw bytes of one GFS APCP GRIB2 file.
+        forecast_hour: Expected forecast end step (hours); used for validation.
+
+    Returns:
+        DecodedApcpMessage with window accumulation values in mm.
+
+    Raises:
+        GfsIngestionError: When no APCP message is found for the forecast hour,
+            units are unexpected, values are negative, or the accumulation window is invalid.
     """
     candidates: list[_ApcpCandidate] = []
     with eccodes.MemoryReader(grib_bytes) as reader:
@@ -491,11 +518,17 @@ def build_gfs_client(
     """Build a ``GfsForecastProviderClient`` with sensible defaults.
 
     Args:
-        forecast_hours (Sequence[int]): Forecast lead-times (hours) to retrieve.
-        bbox (GfsBoundingBox): Lat/lon bounding box for subregion subset.
-        cycle_hours (Sequence[int] | None): Override GFS cycle hours. Defaults to ``None``.
-        freshness_threshold_hours (int | None): Override freshness window. Defaults to ``None``.
-        http_client_factory (HttpClientFactory | None): Override HTTP client. Defaults to ``None``.
+        forecast_hours: Forecast lead-times (hours) to retrieve.
+        bbox: Lat/lon bounding box for subregion subset.
+        cycle_hours: Override GFS cycle hours. Defaults to ``None``.
+        freshness_threshold_hours: Override freshness window. Defaults to ``None``.
+        http_client_factory: Override HTTP client. Defaults to ``None``.
+
+    Returns:
+        Configured ``GfsForecastProviderClient``.
+
+    Raises:
+        ValueError: When no forecast hours are provided or any hour is not positive.
     """
     hours = tuple(sorted({int(hour) for hour in forecast_hours}))
     if not hours:

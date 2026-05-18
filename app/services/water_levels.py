@@ -61,6 +61,14 @@ def _classify(observation: StationObservation) -> RiskLevel:
 
 
 def _to_water_station_level(observation: StationObservation) -> WaterStationLevel:
+    """Map a station observation to the public water-station response model.
+
+    Args:
+        observation: Station observation to map.
+
+    Returns:
+        WaterStationLevel with classified risk level.
+    """
     return WaterStationLevel(
         station_id=observation.station_id,
         station_name=LocalizedName(

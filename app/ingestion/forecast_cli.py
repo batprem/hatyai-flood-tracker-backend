@@ -51,12 +51,13 @@ async def run_dry_ingestion(
     Args:
         providers: Providers to ingest in this run.
         forecast_hours: Forecast hours to request from each provider.
-        include_mongo_preview: When True, include the native MongoDB document
-            shapes in the returned payload.
+        include_mongo_preview: When True, include the native MongoDB document shapes in
+            the returned payload.
         repository: Optional pre-built dry-run repository for tests.
-        use_fixtures: Force fixture-backed clients for every provider so the
-            CLI can run offline. The default uses real network clients where
-            available (currently GFS).
+        use_fixtures: Force fixture-backed clients for every provider so the CLI can run offline.
+
+    Returns:
+        Dictionary with ingestion results including runs, frames, failures, and freshness metadata.
     """
     repo = repository if repository is not None else DryRunForecastRepository()
     runs, frames, failures = await _ingest_into_repository(
@@ -93,8 +94,10 @@ async def run_mongo_ingestion(
         forecast_hours: Forecast hours to request from each provider.
         mongodb_uri: MongoDB connection URI.
         mongodb_database: Database name to persist into.
-        use_fixtures: Force fixture-backed clients for every provider so the
-            CLI can run offline.
+        use_fixtures: Force fixture-backed clients for every provider so the CLI can run offline.
+
+    Returns:
+        Dictionary with ingestion results including runs, frames, failures, and freshness metadata.
     """
     client = AsyncIOMotorClient(mongodb_uri)
     try:
@@ -136,6 +139,12 @@ async def _ingest_into_repository(
     requested forecast hour produced a frame, ``status=PARTIAL`` when the
     provider returned fewer frames than requested but at least one frame, and
     ``status=FAILED`` when the provider produced nothing.
+
+    Args:
+        repository: Repository to persist ingested records into.
+        providers: Forecast providers to ingest.
+        forecast_hours: Forecast hours to request from each provider.
+        use_fixtures: Force fixture-backed clients for testing.
 
     Returns:
         Tuple of ``(runs, frames, failures)`` where ``runs`` includes both
@@ -262,7 +271,13 @@ def parse_forecast_hours(value: str) -> list[int]:
     """Parse a comma-separated forecast-hour list.
 
     Args:
-        value (str): Comma-separated string of positive integers.
+        value: Comma-separated string of positive integers.
+
+    Returns:
+        List of validated positive forecast hours.
+
+    Raises:
+        argparse.ArgumentTypeError: When values are not integers or not positive.
     """
     try:
         hours = [int(item.strip()) for item in value.split(",") if item.strip()]
@@ -280,7 +295,13 @@ def parse_provider(value: str) -> list[ForecastProvider]:
     """Parse provider selection for the dry-run CLI.
 
     Args:
-        value (str): Provider name or 'all' to select all providers.
+        value: Provider name or 'all' to select all providers.
+
+    Returns:
+        List of selected ForecastProvider enums.
+
+    Raises:
+        argparse.ArgumentTypeError: When provider name is not recognized.
     """
     if value == "all":
         return [ForecastProvider.GFS, ForecastProvider.ECMWF_OPEN_DATA]
@@ -296,7 +317,10 @@ def to_json_value(value: object) -> JsonValue:
     """Convert native-datetime Mongo preview objects to JSON-safe values.
 
     Args:
-        value (object): A value that may contain datetime, enum, or nested structures.
+        value: A value that may contain datetime, enum, or nested structures.
+
+    Returns:
+        JSON-serializable value with datetimes as ISO 8601 strings and enums as their string values.
     """
     if value is None or isinstance(value, str | int | float | bool):
         return value

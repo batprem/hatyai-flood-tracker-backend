@@ -135,7 +135,13 @@ class ForecastRun(BaseModel):
         """Require timezone-aware datetimes for storage adapters.
 
         Args:
-            value (datetime | None): Datetime value to validate.
+            value: Datetime value to validate.
+
+        Returns:
+            The datetime converted to UTC if already timezone-aware, else the original None.
+
+        Raises:
+            ValueError: When a non-None datetime is timezone-naive.
         """
         if value is None:
             return value
@@ -187,7 +193,13 @@ class ForecastFrame(BaseModel):
         """Require timezone-aware datetimes for storage adapters.
 
         Args:
-            value (datetime): Datetime value to validate.
+            value: Datetime value to validate.
+
+        Returns:
+            The datetime converted to UTC.
+
+        Raises:
+            ValueError: When the datetime is timezone-naive.
         """
         if value.tzinfo is None or value.utcoffset() is None:
             msg = "forecast timestamps must be timezone-aware"
@@ -200,7 +212,13 @@ class ForecastFrame(BaseModel):
         """Reject negative rainfall values after unit normalization.
 
         Args:
-            value (list[float]): List of rainfall values in mm.
+            value: List of rainfall values in mm.
+
+        Returns:
+            The same list of values if all non-negative.
+
+        Raises:
+            ValueError: When any value is negative.
         """
         if not value:
             msg = "forecast frame values cannot be empty"

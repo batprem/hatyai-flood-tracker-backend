@@ -64,14 +64,12 @@ async def read_forecast_frames(
     """Return normalized forecast frames with a top-level freshness block.
 
     Args:
-        repository (ForecastRepository): Forecast repository injected via dependency.
-        provider (str | None): Normalized provider filter, e.g. 'gfs'. Defaults to ``None``.
-        model (str | None): Normalized model name filter. Defaults to ``None``.
-        valid_time_from (datetime | None): Lower bound on validTime (ISO 8601 UTC).
-            Defaults to ``None``.
-        valid_time_to (datetime | None): Upper bound on validTime (ISO 8601 UTC).
-            Defaults to ``None``.
-        area (str | None): Configured area name. Defaults to ``DEFAULT_AREA_NAME``.
+        repository: Forecast repository injected via dependency.
+        provider: Normalized provider filter, e.g. 'gfs'. Defaults to ``None``.
+        model: Normalized model name filter. Defaults to ``None``.
+        valid_time_from: Lower bound on validTime (ISO 8601 UTC). Defaults to ``None``.
+        valid_time_to: Upper bound on validTime (ISO 8601 UTC). Defaults to ``None``.
+        area: Configured area name. Defaults to ``DEFAULT_AREA_NAME``.
 
     Returns:
         A response wrapping normalized forecast frames with freshness metadata.

@@ -13,7 +13,7 @@ class ForecastRepository(Protocol):
         """Upsert a provider run record.
 
         Args:
-            run (ForecastRun): The forecast run to upsert.
+            run: The forecast run to upsert.
         """
         ...
 
@@ -21,7 +21,7 @@ class ForecastRepository(Protocol):
         """Upsert normalized forecast frame records.
 
         Args:
-            frames (list[ForecastFrame]): List of forecast frames to upsert.
+            frames: List of forecast frames to upsert.
         """
         ...
 
@@ -34,8 +34,11 @@ class ForecastRepository(Protocol):
         """Return a backend-facing freshness summary, optionally scoped to a provider/model.
 
         Args:
-            provider (str | None): Filter by provider name. Defaults to ``None``.
-            model (str | None): Filter by model name. Defaults to ``None``.
+            provider: Filter by provider name. Defaults to ``None``.
+            model: Filter by model name. Defaults to ``None``.
+
+        Returns:
+            Freshness document with status and metadata.
         """
         ...
 
@@ -51,11 +54,14 @@ class ForecastRepository(Protocol):
         """List normalized forecast frames matching the supplied filters.
 
         Args:
-            provider (str | None): Filter by provider name. Defaults to ``None``.
-            model (str | None): Filter by model name. Defaults to ``None``.
-            area_name (str | None): Filter by area name. Defaults to ``None``.
-            valid_time_from (datetime | None): Lower bound on validTime. Defaults to ``None``.
-            valid_time_to (datetime | None): Upper bound on validTime. Defaults to ``None``.
+            provider: Filter by provider name. Defaults to ``None``.
+            model: Filter by model name. Defaults to ``None``.
+            area_name: Filter by area name. Defaults to ``None``.
+            valid_time_from: Lower bound on validTime. Defaults to ``None``.
+            valid_time_to: Upper bound on validTime. Defaults to ``None``.
+
+        Returns:
+            List of ForecastFrame records matching the filters.
         """
         ...
 
@@ -71,7 +77,7 @@ class DryRunForecastRepository:
         """Store a run in memory with idempotent run id semantics.
 
         Args:
-            run (ForecastRun): The forecast run to upsert.
+            run: The forecast run to upsert.
         """
         self.runs = [existing for existing in self.runs if existing.run_id != run.run_id]
         self.runs.append(run)
@@ -80,7 +86,7 @@ class DryRunForecastRepository:
         """Store frames in memory with idempotent frame id semantics.
 
         Args:
-            frames (list[ForecastFrame]): List of forecast frames to upsert.
+            frames: List of forecast frames to upsert.
         """
         incoming_ids = {frame.frame_id for frame in frames}
         self.frames = [
@@ -97,8 +103,11 @@ class DryRunForecastRepository:
         """Return a simple freshness document for API/operator visibility.
 
         Args:
-            provider (str | None): Filter by provider name. Defaults to ``None``.
-            model (str | None): Filter by model name. Defaults to ``None``.
+            provider: Filter by provider name. Defaults to ``None``.
+            model: Filter by model name. Defaults to ``None``.
+
+        Returns:
+            Freshness document with status and metadata.
         """
         candidates = [
             run
@@ -136,11 +145,14 @@ class DryRunForecastRepository:
         """Return stored frames filtered by provider, model, area, and valid-time window.
 
         Args:
-            provider (str | None): Filter by provider name. Defaults to ``None``.
-            model (str | None): Filter by model name. Defaults to ``None``.
-            area_name (str | None): Filter by area name. Defaults to ``None``.
-            valid_time_from (datetime | None): Lower bound on validTime. Defaults to ``None``.
-            valid_time_to (datetime | None): Upper bound on validTime. Defaults to ``None``.
+            provider: Filter by provider name. Defaults to ``None``.
+            model: Filter by model name. Defaults to ``None``.
+            area_name: Filter by area name. Defaults to ``None``.
+            valid_time_from: Lower bound on validTime. Defaults to ``None``.
+            valid_time_to: Upper bound on validTime. Defaults to ``None``.
+
+        Returns:
+            List of ForecastFrame records matching the filters.
         """
         result: list[ForecastFrame] = []
         for frame in self.frames:

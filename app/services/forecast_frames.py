@@ -22,7 +22,10 @@ def to_public_frame(frame: ForecastFrame) -> ForecastFramePublic:
     """Map an internal normalized frame to its public response model.
 
     Args:
-        frame (ForecastFrame): Internal normalized forecast frame.
+        frame: Internal normalized forecast frame.
+
+    Returns:
+        Public forecast frame response model.
     """
     return ForecastFramePublic(
         frame_id=frame.frame_id,
@@ -76,8 +79,11 @@ def build_freshness_block(
     """Translate the repository freshness document into the public freshness block.
 
     Args:
-        summary (MongoDocument): Repository freshness summary.
-        frame_count (int): Number of frames matching the query.
+        summary: Repository freshness summary.
+        frame_count: Number of frames matching the query.
+
+    Returns:
+        Public freshness block with status and metadata.
     """
     raw_status = summary.get("status")
     status = _resolve_freshness_status(raw_status)
@@ -111,12 +117,15 @@ async def list_forecast_frames(
     """Read frames through the repository and return the public response.
 
     Args:
-        repository (ForecastRepository): Forecast repository instance.
-        provider (str | None): Filter by normalized provider.
-        model (str | None): Filter by normalized model name.
-        area (str | None): Configured area name.
-        valid_time_from (datetime | None): Lower bound on validTime.
-        valid_time_to (datetime | None): Upper bound on validTime.
+        repository: Forecast repository instance.
+        provider: Filter by normalized provider.
+        model: Filter by normalized model name.
+        area: Configured area name.
+        valid_time_from: Lower bound on validTime.
+        valid_time_to: Upper bound on validTime.
+
+    Returns:
+        Public forecast frames response with frames, query, and freshness metadata.
     """
     resolved_area = area or DEFAULT_AREA_NAME
     frames = await repository.list_frames(

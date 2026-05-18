@@ -51,7 +51,10 @@ class ForecastProviderClient(Protocol):
         """Return the latest provider run available for ingestion.
 
         Args:
-            now (datetime): Current UTC reference time used to identify candidate cycles.
+            now: Current UTC reference time used to identify candidate cycles.
+
+        Returns:
+            ProviderRunRef for the latest available run.
         """
         ...
 
@@ -59,7 +62,10 @@ class ForecastProviderClient(Protocol):
         """Fetch forecast artifacts for a discovered run.
 
         Args:
-            run_ref (ProviderRunRef): Reference to the forecast run to fetch.
+            run_ref: Reference to the forecast run to fetch.
+
+        Returns:
+            List of ProviderFrameArtifact records ready for normalization.
         """
         ...
 
@@ -85,7 +91,10 @@ class FixtureForecastProviderClient:
         """Resolve the latest scheduled run without calling an external service.
 
         Args:
-            now (datetime): Current UTC reference time used to identify candidate cycles.
+            now: Current UTC reference time used to identify candidate cycles.
+
+        Returns:
+            ProviderRunRef for the resolved scheduled run.
         """
         resolved_now = now.astimezone(UTC)
         cycle_hour = max(
@@ -121,7 +130,10 @@ class FixtureForecastProviderClient:
         """Return tiny clipped precipitation grids shaped like provider artifacts.
 
         Args:
-            run_ref (ProviderRunRef): Reference to the forecast run to fetch.
+            run_ref: Reference to the forecast run to fetch.
+
+        Returns:
+            List of ProviderFrameArtifact records with fixture values.
         """
         artifacts: list[ProviderFrameArtifact] = []
         for forecast_hour in self.forecast_hours:
@@ -169,9 +181,14 @@ def build_provider_client(
     Args:
         provider: Forecast provider to target.
         forecast_hours: Forecast hours to ingest.
-        use_fixtures: When True, return the deterministic fixture client even
-            for providers that have a real network-backed client. Use this for
-            offline tests and CI.
+        use_fixtures: When True, return the deterministic fixture client even for
+            providers that have a real network-backed client.
+
+    Returns:
+        A ForecastProviderClient configured for the specified provider.
+
+    Raises:
+        ValueError: When no forecast hours are provided.
     """
     hours = tuple(sorted(set(forecast_hours)))
     if not hours:

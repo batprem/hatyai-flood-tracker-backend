@@ -186,8 +186,11 @@ class StationObservation(BaseModel):
         """Return True when ``observed_at`` is within ``max_age`` of ``now``.
 
         Args:
-            now (datetime): Current reference time to compare against.
-            max_age (timedelta): Maximum age tolerance.
+            now: Current reference time to compare against.
+            max_age: Maximum age tolerance.
+
+        Returns:
+            True if observation is fresh, False otherwise.
         """
         return (now - self.observed_at) <= max_age
 
@@ -275,7 +278,11 @@ class StationObservationClient(Protocol):
     provider: str
 
     async def fetch_latest_water_levels(self) -> list[StationObservation]:
-        """Return the latest water-level reading per seed station."""
+        """Return the latest water-level reading per seed station.
+
+        Returns:
+            List of StationObservation records for stations with fresh readings.
+        """
         ...
 
 
@@ -363,11 +370,6 @@ class ThaiwaterStationClient:
             from the provider response, or whose latest reading is older
             than ``self.max_age``, are omitted; callers can compare the
             returned ids against the seed list to detect gaps.
-
-        Raises:
-            ThaiwaterIngestionError: When the HTTP call fails after the
-                client's configured retries or the response is not
-                parseable JSON.
         """
         resolved_now = now or datetime.now(UTC)
         payload = await self._get_json(self._waterlevel_url())

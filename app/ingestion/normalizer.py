@@ -23,9 +23,12 @@ def build_run_record(
     """Normalize provider run metadata into a storage-ready run record.
 
     Args:
-        run_ref (ProviderRunRef): Reference to the forecast run.
-        artifacts (list[ProviderFrameArtifact]): List of frame artifacts from the provider.
-        retrieved_at (datetime): Timestamp when the run was retrieved.
+        run_ref: Reference to the forecast run.
+        artifacts: List of frame artifacts from the provider.
+        retrieved_at: Timestamp when the run was retrieved.
+
+    Returns:
+        ForecastRun record normalized and ready for storage.
     """
     expected_hours = [artifact.forecast_hour for artifact in artifacts]
     freshness_status = _freshness_status(
@@ -62,10 +65,13 @@ def normalize_frames(
     """Normalize fetched provider artifacts into forecast frame records.
 
     Args:
-        run_ref (ProviderRunRef): Reference to the forecast run.
-        artifacts (list[ProviderFrameArtifact]): List of frame artifacts from the provider.
-        retrieved_at (datetime): Timestamp when the run was retrieved.
-        area (Phase1Area | None): Area configuration. Defaults to ``None``.
+        run_ref: Reference to the forecast run.
+        artifacts: List of frame artifacts from the provider.
+        retrieved_at: Timestamp when the run was retrieved.
+        area: Area configuration. Defaults to ``None``.
+
+    Returns:
+        List of ForecastFrame records normalized and ready for storage.
     """
     resolved_area = area or Phase1Area()
     processed_at = datetime.now(UTC)

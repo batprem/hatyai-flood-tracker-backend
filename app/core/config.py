@@ -110,9 +110,7 @@ class Settings(BaseSettings):
     )
     thaiwater_max_age_hours: float = Field(
         default=3.0,
-        validation_alias=AliasChoices(
-            "HFT_THAIWATER_MAX_AGE_HOURS", "THAIWATER_MAX_AGE_HOURS"
-        ),
+        validation_alias=AliasChoices("HFT_THAIWATER_MAX_AGE_HOURS", "THAIWATER_MAX_AGE_HOURS"),
         description=(
             "Maximum age (hours) of a ThaiWater station observation before it is "
             "treated as stale and excluded from the public response. Aligns with the "
@@ -121,9 +119,7 @@ class Settings(BaseSettings):
     )
     thaiwater_timeout_seconds: float = Field(
         default=10.0,
-        validation_alias=AliasChoices(
-            "HFT_THAIWATER_TIMEOUT_SECONDS", "THAIWATER_TIMEOUT_SECONDS"
-        ),
+        validation_alias=AliasChoices("HFT_THAIWATER_TIMEOUT_SECONDS", "THAIWATER_TIMEOUT_SECONDS"),
         description=(
             "HTTP timeout in seconds for ThaiWater requests. Public JSON responses "
             "are small (<1 MB) so the default is short to fail fast on outages."
