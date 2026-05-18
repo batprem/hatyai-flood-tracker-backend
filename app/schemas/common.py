@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RiskLevel(StrEnum):
-    """Represent the Phase 1 rule-based flood risk levels."""
+    """Model the Phase 1 rule-based flood risk levels."""
 
     GREEN = "green"
     YELLOW = "yellow"
@@ -14,14 +14,14 @@ class RiskLevel(StrEnum):
 
 
 class Coordinates(BaseModel):
-    """Represent a geographic point in WGS84 coordinates."""
+    """Model a geographic point in WGS84 coordinates."""
 
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
 
 
 class LocalizedName(BaseModel):
-    """Represent a Thai and English display name."""
+    """Model a Thai and English display name."""
 
     th: str
     en: str

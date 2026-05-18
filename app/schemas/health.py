@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class HealthResponse(BaseModel):
-    """Represent backend health status."""
+    """Model backend health status."""
 
     status: str
     service: str

@@ -51,7 +51,7 @@ class RiskRuleSettings:
 
 @dataclass(frozen=True, slots=True)
 class RainfallRiskInput:
-    """Represent normalized rainfall input for risk calculation."""
+    """Model normalized rainfall input for risk calculation."""
 
     area_id: str
     area_name: str
@@ -66,7 +66,7 @@ class RainfallRiskInput:
 
 @dataclass(frozen=True, slots=True)
 class WaterLevelRiskInput:
-    """Represent normalized station input for risk calculation."""
+    """Model normalized station input for risk calculation."""
 
     station_id: str
     station_name: str

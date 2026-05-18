@@ -31,7 +31,7 @@ class ProviderRunRef:
 
 @dataclass(frozen=True)
 class ProviderFrameArtifact:
-    """Represent a small fetched forecast artifact before normalization."""
+    """Model a small fetched forecast artifact before normalization."""
 
     source_url: str
     raw_artifact_ref: str

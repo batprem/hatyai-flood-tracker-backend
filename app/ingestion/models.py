@@ -12,7 +12,7 @@ class ForecastProvider(StrEnum):
 
 
 class ForecastVariable(StrEnum):
-    """Represent supported forecast variables."""
+    """Model supported forecast variables."""
 
     PRECIPITATION = "precipitation"
 
@@ -35,7 +35,7 @@ class ForecastRunStatus(StrEnum):
 
 
 class FreshnessStatus(StrEnum):
-    """Represent consistent data freshness states."""
+    """Model consistent data freshness states."""
 
     FRESH = "fresh"
     DELAYED = "delayed"
@@ -85,9 +85,7 @@ class ForecastSource(BaseModel):
     product: str
     license: str
     license_url: str | None = Field(default=None, serialization_alias="licenseUrl")
-    redistribution_note: str | None = Field(
-        default=None, serialization_alias="redistributionNote"
-    )
+    redistribution_note: str | None = Field(default=None, serialization_alias="redistributionNote")
     attribution: str
     raw_artifact_ref: str = Field(serialization_alias="rawArtifactRef")
 
@@ -106,7 +104,7 @@ class ForecastQuality(BaseModel):
 
 
 class ForecastRun(BaseModel):
-    """Represent one provider model cycle as a normalized run record."""
+    """Model one provider model cycle as a normalized run record."""
 
     run_id: str = Field(serialization_alias="runId")
     provider: ForecastProvider
@@ -125,9 +123,7 @@ class ForecastRun(BaseModel):
     )
     license: str
     license_url: str | None = Field(default=None, serialization_alias="licenseUrl")
-    redistribution_note: str | None = Field(
-        default=None, serialization_alias="redistributionNote"
-    )
+    redistribution_note: str | None = Field(default=None, serialization_alias="redistributionNote")
     attribution: str
     error_reason: str | None = Field(default=None, serialization_alias="errorReason")
 
@@ -146,7 +142,7 @@ class ForecastRun(BaseModel):
 
 
 class ForecastFrame(BaseModel):
-    """Represent one normalized rainfall forecast frame."""
+    """Model one normalized rainfall forecast frame."""
 
     frame_id: str = Field(serialization_alias="frameId")
     run_id: str = Field(serialization_alias="runId")

@@ -7,7 +7,7 @@ from app.schemas.common import Coordinates, DataFreshness, LocalizedName, RiskLe
 
 
 class WaterLevelTrend(StrEnum):
-    """Represent the recent water-level trend direction."""
+    """Model the recent water-level trend direction."""
 
     RISING = "rising"
     STEADY = "steady"
@@ -15,7 +15,7 @@ class WaterLevelTrend(StrEnum):
 
 
 class WaterStationLevel(BaseModel):
-    """Represent a normalized water-level observation at a station."""
+    """Model a normalized water-level observation at a station."""
 
     station_id: str
     station_name: LocalizedName
@@ -30,7 +30,7 @@ class WaterStationLevel(BaseModel):
 
 
 class WaterLevelResponse(BaseModel):
-    """Represent current water-level observations for public display."""
+    """Model current water-level observations for public display."""
 
     freshness: DataFreshness
     stations: list[WaterStationLevel]

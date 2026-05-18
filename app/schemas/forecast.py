@@ -6,7 +6,7 @@ from app.schemas.common import Coordinates, DataFreshness, LocalizedName, RiskLe
 
 
 class RainfallForecastPoint(BaseModel):
-    """Represent normalized basin rainfall forecast data."""
+    """Model normalized basin rainfall forecast data."""
 
     basin_id: str
     basin_name: LocalizedName
@@ -19,7 +19,7 @@ class RainfallForecastPoint(BaseModel):
 
 
 class RainfallForecastResponse(BaseModel):
-    """Represent rainfall forecasts for Hat Yai flood awareness."""
+    """Model rainfall forecasts for Hat Yai flood awareness."""
 
     freshness: DataFreshness
     forecasts: list[RainfallForecastPoint]

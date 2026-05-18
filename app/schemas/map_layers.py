@@ -6,7 +6,7 @@ from app.schemas.common import DataFreshness
 
 
 class MapLayerType(StrEnum):
-    """Represent supported public map layer categories."""
+    """Model supported public map layer categories."""
 
     POINT = "point"
     LINE = "line"
@@ -15,7 +15,7 @@ class MapLayerType(StrEnum):
 
 
 class MapLayer(BaseModel):
-    """Represent a frontend map layer descriptor."""
+    """Model a frontend map layer descriptor."""
 
     layer_id: str
     title: str
@@ -29,7 +29,7 @@ class MapLayer(BaseModel):
 
 
 class MapLayersResponse(BaseModel):
-    """Represent available map layers for public flood monitoring."""
+    """Model available map layers for public flood monitoring."""
 
     freshness: DataFreshness
     layers: list[MapLayer]

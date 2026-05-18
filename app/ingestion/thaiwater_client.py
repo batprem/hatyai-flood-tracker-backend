@@ -105,7 +105,7 @@ class StationQualityFlag(StrEnum):
 
 
 class StationGeoPoint(BaseModel):
-    """Represent a station's WGS84 location as a GeoJSON Point.
+    """Model a station's WGS84 location as a GeoJSON Point.
 
     Stored as a GeoJSON-shaped sub-document so MongoDB ``2dsphere`` indexes
     can be applied to ``station_observations.location`` without re-encoding

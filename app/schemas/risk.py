@@ -7,7 +7,7 @@ from app.schemas.common import DataFreshness, RiskLevel
 
 
 class RiskAvailability(StrEnum):
-    """Represent whether current risk data is usable for public display."""
+    """Model whether current risk data is usable for public display."""
 
     AVAILABLE = "available"
     DEGRADED = "degraded"
@@ -15,7 +15,7 @@ class RiskAvailability(StrEnum):
 
 
 class RiskFreshnessStatus(StrEnum):
-    """Represent freshness status for current risk inputs."""
+    """Model freshness status for current risk inputs."""
 
     FRESH = "fresh"
     AGING = "aging"
@@ -24,7 +24,7 @@ class RiskFreshnessStatus(StrEnum):
 
 
 class RiskUncertaintyLevel(StrEnum):
-    """Represent qualitative uncertainty in a risk decision."""
+    """Model qualitative uncertainty in a risk decision."""
 
     LOW = "low"
     MEDIUM = "medium"
@@ -32,7 +32,7 @@ class RiskUncertaintyLevel(StrEnum):
 
 
 class RiskSignal(BaseModel):
-    """Represent one inspectable input to the current risk decision."""
+    """Model one inspectable input to the current risk decision."""
 
     name: str
     value: str
@@ -63,7 +63,7 @@ class RiskUncertainty(BaseModel):
 
 
 class RiskMapProperties(BaseModel):
-    """Represent GeoJSON-compatible risk properties for map layers."""
+    """Model GeoJSON-compatible risk properties for map layers."""
 
     area_id: str
     level: RiskLevel
@@ -81,7 +81,7 @@ class RiskMapProperties(BaseModel):
 
 
 class CurrentRiskResponse(BaseModel):
-    """Represent the current public flood risk summary."""
+    """Model the current public flood risk summary."""
 
     freshness: DataFreshness
     availability: RiskAvailability = RiskAvailability.AVAILABLE
