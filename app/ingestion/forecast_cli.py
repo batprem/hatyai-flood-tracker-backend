@@ -9,7 +9,7 @@ from enum import StrEnum
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import JsonValue
 
-from app.core.config import ForecastRepositoryBackend, get_settings
+from app.core.config import ForecastRepositoryBackend, Settings, get_settings
 from app.ingestion.models import (
     ForecastFrame,
     ForecastProvider,
@@ -17,7 +17,7 @@ from app.ingestion.models import (
     ForecastRunStatus,
     FreshnessStatus,
 )
-from app.ingestion.mongo_repository import build_mongo_repository
+from app.ingestion.mongo_repository import MongoForecastRepository, build_mongo_repository
 from app.ingestion.normalizer import build_run_record, normalize_frames
 from app.ingestion.providers import build_provider_client
 from app.ingestion.repository import (
@@ -25,7 +25,13 @@ from app.ingestion.repository import (
     ForecastRepository,
 )
 from app.ingestion.station_repository import build_mongo_station_repository
+from app.services.alert_dispatch import dispatch_risk_alert
 from app.services.data_quality import evaluate_and_alert
+from app.services.forecast_frames import DEFAULT_AREA_NAME
+from app.services.risk_rules import (
+    build_rainfall_inputs_from_frames,
+    calculate_current_risk,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +109,7 @@ async def run_mongo_ingestion(
     """
     settings = get_settings()
     client = AsyncIOMotorClient(mongodb_uri)
+    alert_reason: str | None = None
     try:
         repository = build_mongo_repository(client, mongodb_database)
         await repository.ensure_indexes()
@@ -118,6 +125,7 @@ async def run_mongo_ingestion(
         # Phase 2 log-based stale-data alerting: emit one structured ERROR log
         # per breaching source so it is queryable in the Railway log stream.
         await evaluate_and_alert(repository, station_repository, settings)
+        alert_reason = await _evaluate_and_dispatch_alert(repository, settings=get_settings())
     finally:
         client.close()
 
@@ -128,8 +136,56 @@ async def run_mongo_ingestion(
         "frames": frames,
         "failures": failures,
         "freshness": freshness,
+        "alert": alert_reason,
     }
     return payload
+
+
+async def _evaluate_and_dispatch_alert(
+    repository: MongoForecastRepository,
+    *,
+    settings: Settings,
+) -> str | None:
+    """Compute basin risk from stored frames and dispatch a LINE alert when warranted.
+
+    Risk is derived from the freshly persisted forecast frames only; the
+    scheduler has no live water-station client, which is sufficient for the
+    rainfall-driven basin risk used to gate alerts. Any failure here is logged
+    and swallowed so an alerting problem never fails an otherwise-successful
+    ingestion run.
+
+    Args:
+        repository: Mongo-backed forecast repository holding the latest frames.
+        settings: Application settings carrying the LINE token and cooldown.
+
+    Returns:
+        The dispatch decision reason, or ``None`` when no alert was evaluated
+        (for example when no frames are available).
+    """
+    try:
+        frames = await repository.list_frames(area_name=DEFAULT_AREA_NAME)
+        rainfall_inputs = build_rainfall_inputs_from_frames(frames)
+        if not rainfall_inputs:
+            logger.info("alert evaluation skipped: no rainfall inputs from stored frames")
+            return None
+        risk = calculate_current_risk(
+            forecasts=rainfall_inputs,
+            water_levels=[],
+            settings=settings.risk_rule_settings(),
+            generated_at=datetime.now(UTC),
+        )
+        decision = await dispatch_risk_alert(
+            database=repository.database,
+            current_level=risk.level,
+            valid_at=risk.freshness.valid_at,
+            token=settings.line_notify_token,
+            cooldown_hours=settings.line_notify_cooldown_hours,
+            dashboard_url=settings.line_notify_dashboard_url,
+        )
+    except Exception:  # pragma: no cover - defensive: alerting must not fail ingestion
+        logger.exception("alert evaluation failed; ingestion run is unaffected")
+        return None
+    return decision.reason
 
 
 async def _ingest_into_repository(
