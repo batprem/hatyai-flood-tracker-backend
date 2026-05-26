@@ -137,6 +137,40 @@ class Settings(BaseSettings):
         default=ForecastRepositoryBackend.DRY_RUN,
         description=("Select the forecast repository backend: 'dry_run' (in-memory) or 'mongo'."),
     )
+    data_quality_gfs_max_age_hours: float = Field(
+        default=6.0,
+        gt=0,
+        validation_alias=AliasChoices(
+            "HFT_DATA_QUALITY_GFS_MAX_AGE_HOURS", "DATA_QUALITY_GFS_MAX_AGE_HOURS"
+        ),
+        description=(
+            "Maximum age (hours) of the latest successful GFS run before the data-quality "
+            "monitor flags it as stale. Used by the /health data_quality block and the "
+            "ingestion scheduler's stale-data alert."
+        ),
+    )
+    data_quality_ecmwf_max_age_hours: float = Field(
+        default=12.0,
+        gt=0,
+        validation_alias=AliasChoices(
+            "HFT_DATA_QUALITY_ECMWF_MAX_AGE_HOURS", "DATA_QUALITY_ECMWF_MAX_AGE_HOURS"
+        ),
+        description=(
+            "Maximum age (hours) of the latest successful ECMWF run before the data-quality "
+            "monitor flags it as stale. ECMWF disseminates ~9-12 h after the nominal run time."
+        ),
+    )
+    data_quality_station_max_age_hours: float = Field(
+        default=3.0,
+        gt=0,
+        validation_alias=AliasChoices(
+            "HFT_DATA_QUALITY_STATION_MAX_AGE_HOURS", "DATA_QUALITY_STATION_MAX_AGE_HOURS"
+        ),
+        description=(
+            "Maximum age (hours) of the latest station observation before the data-quality "
+            "monitor flags it as stale. Aligns with thaiwater_max_age_hours by default."
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file="dev.env",

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Protocol, cast
 
-from app.ingestion.models import ForecastFrame, ForecastRun, FreshnessStatus
+from app.ingestion.models import ForecastFrame, ForecastRun, ForecastRunStatus, FreshnessStatus
 
 MongoDocument = dict[str, object]
 
@@ -38,7 +38,10 @@ class ForecastRepository(Protocol):
             model: Filter by model name. Defaults to ``None``.
 
         Returns:
-            Freshness document with status and metadata.
+            Freshness document with ``status``, ``runStatus`` (the latest
+            ingestion run status), provenance metadata, ``frameCount``, and an
+            optional operator-readable ``reason`` when the run failed or was
+            partial.
         """
         ...
 
@@ -123,14 +126,26 @@ class DryRunForecastRepository:
 
         latest_run = max(candidates, key=lambda run: run.run_time)
         frame_count = len([frame for frame in self.frames if frame.run_id == latest_run.run_id])
+        status: FreshnessStatus = latest_run.freshness_status
+        reason: str | None = None
+        # An ingestion run that ended FAILED must surface as a failed freshness
+        # status with an operator-readable reason even if the stored
+        # freshness_status (computed from run age) still reads fresh.
+        if latest_run.status is ForecastRunStatus.FAILED:
+            status = FreshnessStatus.FAILED
+            reason = latest_run.error_reason or "latest ingestion run failed"
+        elif latest_run.status is ForecastRunStatus.PARTIAL:
+            reason = latest_run.error_reason or "latest ingestion run produced partial coverage"
         return {
             "provider": latest_run.provider,
             "model": latest_run.model,
             "runTime": latest_run.run_time,
             "retrievedAt": latest_run.retrieved_at,
-            "status": latest_run.freshness_status,
+            "status": status,
+            "runStatus": latest_run.status,
             "thresholdHours": latest_run.freshness_threshold_hours,
             "frameCount": frame_count,
+            "reason": reason,
         }
 
     async def list_frames(
