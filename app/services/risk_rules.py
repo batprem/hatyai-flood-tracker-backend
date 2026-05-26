@@ -6,6 +6,7 @@ from app.ingestion.models import ForecastFrame
 from app.schemas.common import DataFreshness, RiskLevel
 from app.schemas.risk import (
     CurrentRiskResponse,
+    ProviderRiskResult,
     RiskAvailability,
     RiskCoverage,
     RiskFreshnessStatus,
@@ -385,6 +386,159 @@ def calculate_current_risk(
         ),
         is_official_warning=False,
     )
+
+
+def compute_provider_risk(
+    *,
+    provider: str,
+    frames: Sequence[ForecastFrame],
+    water_levels: Sequence[WaterLevelRiskInput],
+    settings: RiskRuleSettings,
+    generated_at: datetime,
+) -> ProviderRiskResult:
+    """Compute one provider's isolated flood risk contribution for the ensemble.
+
+    The provider's frames are scored independently with ``calculate_current_risk``
+    so each provider can be combined later. A provider with zero frames is
+    reported as ``failed`` with a ``green`` level so it never raises the public
+    ensemble risk on its own.
+
+    Args:
+        provider: Provider identifier, e.g. ``"gfs"`` or ``"ecmwf_open_data"``.
+        frames: This provider's latest-run forecast frames.
+        water_levels: Station observation inputs shared across providers.
+        settings: Risk rule configuration and thresholds.
+        generated_at: Timestamp of risk generation.
+
+    Returns:
+        A per-provider risk result with freshness, computed level, dominant
+        accumulation window, model run time, and frame count.
+    """
+    if not frames:
+        return ProviderRiskResult(
+            provider=provider,
+            freshness_status=RiskFreshnessStatus.FAILED,
+            model_run_time=None,
+            computed_risk_level=RiskLevel.GREEN,
+            dominant_window=None,
+            frame_count=0,
+        )
+
+    rainfall_inputs = build_rainfall_inputs_from_frames(frames)
+    response = calculate_current_risk(
+        forecasts=rainfall_inputs,
+        water_levels=water_levels,
+        settings=settings,
+        generated_at=generated_at,
+    )
+    computed_level = response.computed_level or RiskLevel.GREEN
+    dominant_window = _dominant_window(rainfall_inputs, computed_level, settings)
+    model_run_time = max((frame.run_time for frame in frames), default=None)
+    return ProviderRiskResult(
+        provider=provider,
+        freshness_status=response.freshness_status,
+        model_run_time=model_run_time,
+        computed_risk_level=computed_level,
+        dominant_window=dominant_window,
+        frame_count=len(frames),
+    )
+
+
+# Provider freshness states that may raise the public ensemble risk.
+USABLE_FRESHNESS: frozenset[RiskFreshnessStatus] = frozenset(
+    {RiskFreshnessStatus.FRESH, RiskFreshnessStatus.AGING}
+)
+
+
+def combine_ensemble_risk(
+    *,
+    frames_by_provider: Mapping[str, Sequence[ForecastFrame]],
+    providers: Sequence[str],
+    water_levels: Sequence[WaterLevelRiskInput],
+    settings: RiskRuleSettings,
+    generated_at: datetime,
+) -> CurrentRiskResponse:
+    """Combine per-provider forecasts into a single ensemble flood risk response.
+
+    Each provider is scored independently. Providers whose freshness is fresh or
+    aging are usable; their frames are unioned and re-scored so the public level
+    is the maximum across usable providers. When exactly one provider is usable
+    the response carries ``single_provider_warning`` set to ``True``; when none
+    are usable the response is the standard unavailable response. The per-provider
+    contributions are always attached under ``providers``.
+
+    Args:
+        frames_by_provider: Latest-run frames keyed by provider identifier.
+        providers: Provider identifiers in display order.
+        water_levels: Station observation inputs shared across providers.
+        settings: Risk rule configuration and thresholds.
+        generated_at: Timestamp of risk generation.
+
+    Returns:
+        The ensemble flood risk response with per-provider contributions and the
+        ``single_provider_warning`` flag set.
+    """
+    provider_results = [
+        compute_provider_risk(
+            provider=provider,
+            frames=frames_by_provider.get(provider, []),
+            water_levels=water_levels,
+            settings=settings,
+            generated_at=generated_at,
+        )
+        for provider in providers
+    ]
+
+    usable_frames: list[ForecastFrame] = [
+        frame
+        for result, provider in zip(provider_results, providers, strict=True)
+        if result.freshness_status in USABLE_FRESHNESS
+        for frame in frames_by_provider.get(provider, [])
+    ]
+    rainfall_inputs = build_rainfall_inputs_from_frames(usable_frames)
+    response = calculate_current_risk(
+        forecasts=rainfall_inputs,
+        water_levels=water_levels,
+        settings=settings,
+        generated_at=generated_at,
+    )
+
+    usable_count = sum(
+        1 for result in provider_results if result.freshness_status in USABLE_FRESHNESS
+    )
+    return response.model_copy(
+        update={
+            "providers": provider_results,
+            "single_provider_warning": usable_count == 1,
+        }
+    )
+
+
+def _dominant_window(
+    rainfall_inputs: Sequence[RainfallRiskInput],
+    computed_level: RiskLevel,
+    settings: RiskRuleSettings,
+) -> str | None:
+    """Return the accumulation window that drove the highest provider risk.
+
+    Args:
+        rainfall_inputs: Rainfall inputs derived from the provider's frames.
+        computed_level: Risk level computed across all of the provider's inputs.
+        settings: Risk rule configuration and thresholds.
+
+    Returns:
+        The driving accumulation window formatted like ``"24h"``, or ``None``
+        when no input matches the computed level.
+    """
+    matching_windows = [
+        forecast.accumulation_hours
+        for forecast in rainfall_inputs
+        if (threshold := settings.rainfall_thresholds.get(forecast.accumulation_hours)) is not None
+        and score_rainfall(forecast.rainfall_mm, threshold) == computed_level
+    ]
+    if not matching_windows:
+        return None
+    return f"{max(matching_windows)}h"
 
 
 def _unavailable_response(

@@ -21,6 +21,7 @@ class RiskFreshnessStatus(StrEnum):
     AGING = "aging"
     STALE = "stale"
     UNAVAILABLE = "unavailable"
+    FAILED = "failed"
 
 
 class RiskUncertaintyLevel(StrEnum):
@@ -97,6 +98,34 @@ class RiskUncertainty(BaseModel):
     reasons: list[str]
 
 
+class ProviderRiskResult(BaseModel):
+    """Model one weather provider's contribution to the ensemble flood risk.
+
+    A provider with zero stored frames is reported with ``freshness_status``
+    ``failed`` and ``computed_risk_level`` ``green`` so it does not raise the
+    public ensemble risk while still being visible to the frontend.
+    """
+
+    provider: str = Field(
+        description="Stable provider identifier, e.g. 'gfs' or 'ecmwf_open_data'.",
+    )
+    freshness_status: RiskFreshnessStatus = Field(
+        description="Freshness of this provider's latest run relative to risk generation.",
+    )
+    model_run_time: datetime | None = Field(
+        default=None,
+        description="Model run (cycle) time of the latest frames, or null when unavailable.",
+    )
+    computed_risk_level: RiskLevel = Field(
+        description="Risk level computed from this provider's frames in isolation.",
+    )
+    dominant_window: str | None = Field(
+        default=None,
+        description="Accumulation window that drove the highest risk, e.g. '24h'.",
+    )
+    frame_count: int = Field(ge=0, description="Number of stored frames used for this provider.")
+
+
 class RiskMapProperties(BaseModel):
     """Model GeoJSON-compatible risk properties for map layers."""
 
@@ -136,6 +165,14 @@ class CurrentRiskResponse(BaseModel):
     water_level_contributions: list[WaterLevelContribution] = Field(default_factory=list)
     degraded_inputs: bool = False
     is_official_warning: bool = False
+    providers: list[ProviderRiskResult] = Field(
+        default_factory=list,
+        description="Per-provider risk contributions combined into the public ensemble level.",
+    )
+    single_provider_warning: bool = Field(
+        default=False,
+        description="True when only one provider was fresh enough to drive the ensemble.",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -208,6 +245,25 @@ class CurrentRiskResponse(BaseModel):
                 ],
                 "degraded_inputs": False,
                 "is_official_warning": False,
+                "providers": [
+                    {
+                        "provider": "gfs",
+                        "freshness_status": "fresh",
+                        "model_run_time": "2026-05-01T12:00:00Z",
+                        "computed_risk_level": "yellow",
+                        "dominant_window": "24h",
+                        "frame_count": 2,
+                    },
+                    {
+                        "provider": "ecmwf_open_data",
+                        "freshness_status": "fresh",
+                        "model_run_time": "2026-05-01T12:00:00Z",
+                        "computed_risk_level": "green",
+                        "dominant_window": "6h",
+                        "frame_count": 2,
+                    },
+                ],
+                "single_provider_warning": False,
             }
         }
     )

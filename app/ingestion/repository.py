@@ -68,6 +68,23 @@ class ForecastRepository(Protocol):
         """
         ...
 
+    async def get_latest_frames_per_provider(
+        self,
+        area_name: str,
+        providers: list[str],
+    ) -> dict[str, list[ForecastFrame]]:
+        """Return each provider's latest-run frames for an area, keyed by provider.
+
+        Args:
+            area_name: Forecast area name to scope the query.
+            providers: Provider identifiers to fetch independently.
+
+        Returns:
+            Mapping of provider identifier to that provider's latest-run frames,
+            with an empty list when no frames are stored for the provider.
+        """
+        ...
+
 
 class DryRunForecastRepository:
     """Keep forecast records in memory while preserving MongoDB document shape."""
@@ -183,6 +200,37 @@ class DryRunForecastRepository:
                 continue
             result.append(frame)
         result.sort(key=lambda frame: (frame.provider.value, frame.model, frame.valid_time))
+        return result
+
+    async def get_latest_frames_per_provider(
+        self,
+        area_name: str,
+        providers: list[str],
+    ) -> dict[str, list[ForecastFrame]]:
+        """Return each provider's latest-run frames for an area from memory.
+
+        Args:
+            area_name: Forecast area name to scope the query.
+            providers: Provider identifiers to fetch independently.
+
+        Returns:
+            Mapping of provider identifier to that provider's latest-run frames,
+            with an empty list when no frames are stored for the provider.
+        """
+        result: dict[str, list[ForecastFrame]] = {}
+        for provider in providers:
+            candidates = [
+                frame
+                for frame in self.frames
+                if frame.provider.value == provider and frame.area.name == area_name
+            ]
+            if not candidates:
+                result[provider] = []
+                continue
+            latest_run_time = max(frame.run_time for frame in candidates)
+            latest_frames = [frame for frame in candidates if frame.run_time == latest_run_time]
+            latest_frames.sort(key=lambda frame: frame.valid_time)
+            result[provider] = latest_frames
         return result
 
     def mongo_preview(self) -> MongoDocument:

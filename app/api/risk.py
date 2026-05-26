@@ -11,6 +11,7 @@ from app.api.deps import (
     get_threshold_database,
 )
 from app.core.config import Settings, get_settings
+from app.ingestion.models import ForecastProvider
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
 from app.ingestion.station_thresholds import get_station_thresholds
@@ -19,13 +20,18 @@ from app.schemas.risk import CurrentRiskResponse
 from app.services.forecast_frames import DEFAULT_AREA_NAME
 from app.services.risk_rules import (
     WaterLevelRiskInput,
-    build_rainfall_inputs_from_frames,
-    calculate_current_risk,
+    combine_ensemble_risk,
 )
 from app.services.water_level_contribution import build_water_level_contributions
 from app.services.water_levels import get_water_levels
 
 router = APIRouter(prefix="/risk", tags=["risk"])
+
+# Providers combined into the public ensemble risk, in display order.
+ENSEMBLE_PROVIDERS: tuple[str, ...] = (
+    ForecastProvider.GFS.value,
+    ForecastProvider.ECMWF_OPEN_DATA.value,
+)
 
 
 @router.get("/current", response_model=CurrentRiskResponse)
@@ -40,15 +46,17 @@ async def read_current_risk(
         AsyncIOMotorDatabase | None, Depends(get_threshold_database)
     ] = None,
 ) -> CurrentRiskResponse:
-    """Return the current rule-based flood risk summary.
+    """Return the current ensemble rule-based flood risk summary.
 
-    Rainfall drivers are derived from the latest persisted GFS/ECMWF frames via
-    ForecastRepository.list_frames. Water-level inputs use real ThaiWater/HAII
-    observations; is_mock=False so the risk engine can raise public risk on
-    real fresh station data. When configured, per-station RID watch/warning/
-    danger thresholds are read from the ``station_thresholds`` collection to
-    attach a ``water_level_contributions`` block; ``degraded_inputs`` is set
-    when no fresh station observation is available.
+    Rainfall risk is computed per provider (GFS and ECMWF Open Data) from each
+    provider's latest stored run, then combined: when both providers are fresh
+    the public level is the maximum of the two; when only one is fresh the
+    fresh provider drives the level and ``single_provider_warning`` is set; when
+    neither is fresh the ensemble is reported as unavailable. Water-level inputs
+    use real ThaiWater/HAII observations and are shared across providers. When
+    configured, per-station RID watch/warning/danger thresholds are read from
+    the ``station_thresholds`` collection to attach a ``water_level_contributions``
+    block; ``degraded_inputs`` is set when no fresh station observation is available.
 
     Args:
         settings: Application settings injected via dependency.
@@ -59,10 +67,14 @@ async def read_current_risk(
             None when unconfigured. Defaults to ``None``.
 
     Returns:
-        A rule-based flood risk summary with rainfall and station drivers.
+        A rule-based ensemble flood risk summary with per-provider contributions.
     """
-    frames = await forecast_repository.list_frames(area_name=DEFAULT_AREA_NAME)
-    rainfall_inputs = build_rainfall_inputs_from_frames(frames)
+    generated_at = datetime.now(UTC)
+    rule_settings = settings.risk_rule_settings()
+    frames_by_provider = await forecast_repository.get_latest_frames_per_provider(
+        area_name=DEFAULT_AREA_NAME,
+        providers=list(ENSEMBLE_PROVIDERS),
+    )
     water_levels = await get_water_levels(
         client=client,
         repository=station_repository,
@@ -81,11 +93,13 @@ async def read_current_risk(
         )
         for station in water_levels.stations
     ]
-    response = calculate_current_risk(
-        forecasts=rainfall_inputs,
+
+    response = combine_ensemble_risk(
+        frames_by_provider=frames_by_provider,
+        providers=ENSEMBLE_PROVIDERS,
         water_levels=stations,
-        settings=settings.risk_rule_settings(),
-        generated_at=datetime.now(UTC),
+        settings=rule_settings,
+        generated_at=generated_at,
     )
 
     thresholds = (
