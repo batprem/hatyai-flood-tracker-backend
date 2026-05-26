@@ -171,6 +171,39 @@ class Settings(BaseSettings):
             "monitor flags it as stale. Aligns with thaiwater_max_age_hours by default."
         ),
     )
+    line_notify_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("HFT_LINE_NOTIFY_TOKEN", "LINE_NOTIFY_TOKEN"),
+        description=(
+            "LINE Notify channel access token used to push flood alerts. When empty the "
+            "alert dispatcher logs a warning and skips sending so non-production "
+            "environments do not error. Never commit a real token to source."
+        ),
+    )
+    line_notify_cooldown_hours: int = Field(
+        default=3,
+        ge=0,
+        validation_alias=AliasChoices(
+            "HFT_LINE_NOTIFY_COOLDOWN_HOURS", "LINE_NOTIFY_COOLDOWN_HOURS"
+        ),
+        description=(
+            "Minimum hours between LINE alerts for the same risk level. A further "
+            "upward transition (e.g. orange to red) bypasses the cooldown."
+        ),
+    )
+    line_notify_dashboard_url: str = Field(
+        default="https://hatyai-flood-warning.vercel.app",
+        validation_alias=AliasChoices("HFT_LINE_NOTIFY_DASHBOARD_URL", "LINE_NOTIFY_DASHBOARD_URL"),
+        description="Public dashboard URL appended to outgoing LINE alert messages.",
+    )
+    alerts_test_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("HFT_ALERTS_TEST_TOKEN", "ALERTS_TEST_TOKEN"),
+        description=(
+            "Bearer token protecting POST /api/alerts/test. When empty the endpoint "
+            "rejects every request so a misconfigured deploy cannot be triggered."
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file="dev.env",

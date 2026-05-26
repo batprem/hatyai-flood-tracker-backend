@@ -1,8 +1,28 @@
 from fastapi import Request
 
+from app.core.config import Settings, get_settings
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
 from app.ingestion.thaiwater_client import StationObservationClient
+
+
+def get_app_settings(request: Request) -> Settings:
+    """Return the application settings configured on ``app.state``.
+
+    Prefers the lifespan/test-injected settings on ``app.state`` so endpoints
+    honor settings passed to :func:`create_app`, falling back to the cached
+    global settings when none were attached.
+
+    Args:
+        request: The FastAPI request object providing access to app state.
+
+    Returns:
+        The active application settings.
+    """
+    settings = getattr(request.app.state, "settings", None)
+    if isinstance(settings, Settings):
+        return settings
+    return get_settings()
 
 
 def get_forecast_repository(request: Request) -> ForecastRepository:
