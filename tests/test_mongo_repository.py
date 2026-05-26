@@ -36,13 +36,14 @@ def _build_repository() -> MongoForecastRepository:
     return build_mongo_repository(client, "hatyai_flood_warning_test")
 
 
-async def _seed_gfs_run(
+async def _seed_run(
     repository: MongoForecastRepository,
     *,
+    provider: ForecastProvider,
     forecast_hours: list[int],
     retrieved_at: datetime,
 ) -> tuple[int, int]:
-    client = build_provider_client(ForecastProvider.GFS, forecast_hours, use_fixtures=True)
+    client = build_provider_client(provider, forecast_hours, use_fixtures=True)
     run_ref = client.discover_latest_run(retrieved_at)
     artifacts = client.fetch_run(run_ref)
     run = build_run_record(run_ref, artifacts, retrieved_at).model_copy(
@@ -52,6 +53,20 @@ async def _seed_gfs_run(
     await repository.upsert_run(run)
     await repository.upsert_frames(frames)
     return 1, len(frames)
+
+
+async def _seed_gfs_run(
+    repository: MongoForecastRepository,
+    *,
+    forecast_hours: list[int],
+    retrieved_at: datetime,
+) -> tuple[int, int]:
+    return await _seed_run(
+        repository,
+        provider=ForecastProvider.GFS,
+        forecast_hours=forecast_hours,
+        retrieved_at=retrieved_at,
+    )
 
 
 class MongoForecastRepositoryTests(unittest.IsolatedAsyncioTestCase):
@@ -141,6 +156,67 @@ class MongoForecastRepositoryTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(len(narrowed), 1)
         self.assertEqual(narrowed[0].valid_time, cutoff)
+
+    async def test_latest_frames_per_provider_scopes_by_provider_and_latest_run(self) -> None:
+        repository = _build_repository()
+        await repository.ensure_indexes()
+
+        old_retrieved_at = datetime(2026, 5, 1, 4, 30, tzinfo=UTC)
+        new_retrieved_at = datetime(2026, 5, 2, 4, 30, tzinfo=UTC)
+        # Two GFS runs so the newer one must win, plus a single ECMWF run.
+        await _seed_run(
+            repository,
+            provider=ForecastProvider.GFS,
+            forecast_hours=[6],
+            retrieved_at=old_retrieved_at,
+        )
+        await _seed_run(
+            repository,
+            provider=ForecastProvider.GFS,
+            forecast_hours=[6],
+            retrieved_at=new_retrieved_at,
+        )
+        await _seed_run(
+            repository,
+            provider=ForecastProvider.ECMWF_OPEN_DATA,
+            forecast_hours=[6],
+            retrieved_at=new_retrieved_at,
+        )
+
+        result = await repository.get_latest_frames_per_provider(
+            area_name="hatyai_utapao_songkhla_phase1",
+            providers=[ForecastProvider.GFS.value, ForecastProvider.ECMWF_OPEN_DATA.value],
+        )
+
+        gfs_frames = result[ForecastProvider.GFS.value]
+        ecmwf_frames = result[ForecastProvider.ECMWF_OPEN_DATA.value]
+        self.assertTrue(gfs_frames)
+        self.assertTrue(ecmwf_frames)
+        self.assertTrue(all(frame.provider is ForecastProvider.GFS for frame in gfs_frames))
+        self.assertTrue(
+            all(frame.provider is ForecastProvider.ECMWF_OPEN_DATA for frame in ecmwf_frames)
+        )
+        # Only the latest GFS run's frames are returned.
+        gfs_run_times = {frame.run_time for frame in gfs_frames}
+        self.assertEqual(len(gfs_run_times), 1)
+
+    async def test_latest_frames_per_provider_returns_empty_for_missing_provider(self) -> None:
+        repository = _build_repository()
+        await repository.ensure_indexes()
+
+        await _seed_run(
+            repository,
+            provider=ForecastProvider.GFS,
+            forecast_hours=[6],
+            retrieved_at=datetime(2026, 5, 1, 4, 30, tzinfo=UTC),
+        )
+
+        result = await repository.get_latest_frames_per_provider(
+            area_name="hatyai_utapao_songkhla_phase1",
+            providers=[ForecastProvider.GFS.value, ForecastProvider.ECMWF_OPEN_DATA.value],
+        )
+        self.assertTrue(result[ForecastProvider.GFS.value])
+        self.assertEqual(result[ForecastProvider.ECMWF_OPEN_DATA.value], [])
 
     async def test_freshness_summary_after_ingestion_is_fresh_or_stale(self) -> None:
         repository = _build_repository()

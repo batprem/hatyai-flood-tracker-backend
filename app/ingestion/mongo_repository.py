@@ -279,6 +279,45 @@ class MongoForecastRepository:
             results.append(ForecastFrame.model_validate(decoded))
         return results
 
+    async def get_latest_frames_per_provider(
+        self,
+        area_name: str,
+        providers: list[str],
+    ) -> dict[str, list[ForecastFrame]]:
+        """Return each provider's latest-run frames for an area, keyed by provider.
+
+        For each provider the latest run is resolved from ``forecast_runs`` by
+        ``runTime`` so a partially-ingested newer run still wins over an older
+        complete one; the matching frames are then loaded by ``runId`` and area.
+
+        Args:
+            area_name: Forecast area name to scope the query.
+            providers: Provider identifiers to fetch independently.
+
+        Returns:
+            Mapping of provider identifier to that provider's latest-run frames,
+            with an empty list when no frames are stored for the provider.
+        """
+        result: dict[str, list[ForecastFrame]] = {}
+        for provider in providers:
+            latest_run = await self._runs.find_one(
+                {"provider": provider},
+                sort=[("runTime", DESCENDING)],
+            )
+            if latest_run is None:
+                result[provider] = []
+                continue
+
+            cursor = self._frames.find({"runId": latest_run["runId"], "area.name": area_name}).sort(
+                [("validTime", ASCENDING)]
+            )
+            frames: list[ForecastFrame] = []
+            async for document in cursor:
+                decoded = _decode_with_aliases(ForecastFrame, _strip_frame_metadata(document))
+                frames.append(ForecastFrame.model_validate(decoded))
+            result[provider] = frames
+        return result
+
     async def _ensure_frames_timeseries(self) -> None:
         """Create the ``forecast_frames`` time-series collection when missing.
 
