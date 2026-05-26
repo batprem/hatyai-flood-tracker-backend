@@ -16,6 +16,7 @@ from app.ingestion.station_repository import (
     StationObservationRepository,
     build_mongo_station_repository,
 )
+from app.ingestion.station_thresholds import seed_station_thresholds
 from app.ingestion.thaiwater_client import (
     ThaiwaterStationClient,
     build_thaiwater_client,
@@ -62,6 +63,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             app.state.station_repository = station_repo
         else:
             app.state.station_repository = DryRunStationRepository()
+
+    if not hasattr(app.state, "threshold_database"):
+        if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
+            if mongo_client is None:
+                mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
+                app.state.mongo_client = mongo_client
+            threshold_database = mongo_client[settings.mongodb_database]
+            await seed_station_thresholds(threshold_database)
+            app.state.threshold_database = threshold_database
+        else:
+            app.state.threshold_database = None
 
     if not thaiwater_client_already_set:
         if not thaiwater_http_already_set:
