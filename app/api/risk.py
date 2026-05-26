@@ -2,15 +2,18 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api.deps import (
     get_forecast_repository,
     get_station_observation_client,
     get_station_repository,
+    get_threshold_database,
 )
 from app.core.config import Settings, get_settings
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
+from app.ingestion.station_thresholds import get_station_thresholds
 from app.ingestion.thaiwater_client import StationObservationClient
 from app.schemas.risk import CurrentRiskResponse
 from app.services.forecast_frames import DEFAULT_AREA_NAME
@@ -19,6 +22,7 @@ from app.services.risk_rules import (
     build_rainfall_inputs_from_frames,
     calculate_current_risk,
 )
+from app.services.water_level_contribution import build_water_level_contributions
 from app.services.water_levels import get_water_levels
 
 router = APIRouter(prefix="/risk", tags=["risk"])
@@ -32,19 +36,27 @@ async def read_current_risk(
     station_repository: Annotated[
         StationObservationRepository | None, Depends(get_station_repository)
     ] = None,
+    threshold_database: Annotated[
+        AsyncIOMotorDatabase | None, Depends(get_threshold_database)
+    ] = None,
 ) -> CurrentRiskResponse:
     """Return the current rule-based flood risk summary.
 
     Rainfall drivers are derived from the latest persisted GFS/ECMWF frames via
     ForecastRepository.list_frames. Water-level inputs use real ThaiWater/HAII
     observations; is_mock=False so the risk engine can raise public risk on
-    real fresh station data.
+    real fresh station data. When configured, per-station RID watch/warning/
+    danger thresholds are read from the ``station_thresholds`` collection to
+    attach a ``water_level_contributions`` block; ``degraded_inputs`` is set
+    when no fresh station observation is available.
 
     Args:
         settings: Application settings injected via dependency.
         forecast_repository: Forecast repository injected via dependency.
         client: ThaiWater client injected via dependency.
         station_repository: Station repository or None. Defaults to ``None``.
+        threshold_database: Mongo database holding station thresholds, or
+            None when unconfigured. Defaults to ``None``.
 
     Returns:
         A rule-based flood risk summary with rainfall and station drivers.
@@ -69,9 +81,24 @@ async def read_current_risk(
         )
         for station in water_levels.stations
     ]
-    return calculate_current_risk(
+    response = calculate_current_risk(
         forecasts=rainfall_inputs,
         water_levels=stations,
         settings=settings.risk_rule_settings(),
         generated_at=datetime.now(UTC),
     )
+
+    thresholds = (
+        await get_station_thresholds(
+            threshold_database,
+            station_ids=[station.station_id for station in stations],
+        )
+        if threshold_database is not None and stations
+        else {}
+    )
+    response.water_level_contributions = build_water_level_contributions(
+        stations=stations,
+        thresholds=thresholds,
+    )
+    response.degraded_inputs = not stations
+    return response

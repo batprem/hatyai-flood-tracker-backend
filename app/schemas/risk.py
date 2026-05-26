@@ -31,6 +31,41 @@ class RiskUncertaintyLevel(StrEnum):
     HIGH = "high"
 
 
+class ThresholdApplied(StrEnum):
+    """Model which station alert threshold an observed level reached."""
+
+    DANGER = "danger"
+    WARNING = "warning"
+    WATCH = "watch"
+    NONE = "none"
+
+
+class WaterLevelContribution(BaseModel):
+    """Model one station's threshold-based contribution to current risk."""
+
+    station_id: str = Field(description="Provider-stable station code, e.g. 'X.44'.")
+    station_name: str = Field(description="Human-readable station name for display.")
+    observed_level_m: float = Field(description="Observed water level in metres.")
+    watch_level_m: float | None = Field(
+        default=None,
+        description="Configured watch alert level in metres, or null when unknown.",
+    )
+    warning_level_m: float | None = Field(
+        default=None,
+        description="Configured warning alert level in metres, or null when unknown.",
+    )
+    danger_level_m: float | None = Field(
+        default=None,
+        description="Configured danger alert level in metres, or null when unknown.",
+    )
+    threshold_applied: ThresholdApplied = Field(
+        description="Highest configured threshold the observed level reached."
+    )
+    risk_contribution: RiskLevel = Field(
+        description="Per-station risk level implied by the applied threshold."
+    )
+
+
 class RiskSignal(BaseModel):
     """Model one inspectable input to the current risk decision."""
 
@@ -98,6 +133,8 @@ class CurrentRiskResponse(BaseModel):
     coverage: RiskCoverage
     uncertainty: RiskUncertainty
     map_properties: RiskMapProperties
+    water_level_contributions: list[WaterLevelContribution] = Field(default_factory=list)
+    degraded_inputs: bool = False
     is_official_warning: bool = False
 
     model_config = ConfigDict(
@@ -157,6 +194,19 @@ class CurrentRiskResponse(BaseModel):
                     "latest_source_retrieved_at": "2026-05-01T17:30:00Z",
                     "is_official_warning": False,
                 },
+                "water_level_contributions": [
+                    {
+                        "station_id": "X.44",
+                        "station_name": "U-Tapao Canal Upstream (Rattaphum)",
+                        "observed_level_m": 3.1,
+                        "watch_level_m": 2.0,
+                        "warning_level_m": 3.0,
+                        "danger_level_m": 4.0,
+                        "threshold_applied": "warning",
+                        "risk_contribution": "orange",
+                    }
+                ],
+                "degraded_inputs": False,
                 "is_official_warning": False,
             }
         }

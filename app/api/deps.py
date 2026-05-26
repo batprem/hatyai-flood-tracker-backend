@@ -1,4 +1,5 @@
 from fastapi import Request
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.config import Settings, get_settings
 from app.ingestion.repository import ForecastRepository
@@ -73,3 +74,19 @@ def get_station_repository(request: Request) -> StationObservationRepository | N
         The station observation repository, or ``None`` when not configured.
     """
     return getattr(request.app.state, "station_repository", None)
+
+
+def get_threshold_database(request: Request) -> AsyncIOMotorDatabase | None:
+    """Return the Mongo database holding station thresholds, or None.
+
+    The ``station_thresholds`` collection only exists when the Mongo backend
+    is active. In dry-run mode no database is configured, so the risk endpoint
+    degrades to an empty contribution block.
+
+    Args:
+        request: The FastAPI request object providing access to app state.
+
+    Returns:
+        The threshold-backing database handle, or ``None`` when not configured.
+    """
+    return getattr(request.app.state, "threshold_database", None)
