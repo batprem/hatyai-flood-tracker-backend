@@ -9,7 +9,9 @@ dependencies = [
     "fastapi",
     "httpx>=0.28.1",
     "motor>=3.6.0",
+    "py-vapid>=1.9.0",
     "pydantic-settings",
+    "pywebpush>=2.0.0",
     "uvicorn[standard]",
 ]
 

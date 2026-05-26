@@ -25,13 +25,15 @@ from app.ingestion.repository import (
     ForecastRepository,
 )
 from app.ingestion.station_repository import build_mongo_station_repository
-from app.services.alert_dispatch import dispatch_risk_alert
+from app.ingestion.subscription_repository import build_mongo_subscription_repository
+from app.services.alert_dispatch import dispatch_risk_alert, dispatch_web_push_alert
 from app.services.data_quality import evaluate_and_alert
 from app.services.forecast_frames import DEFAULT_AREA_NAME
 from app.services.risk_rules import (
     build_rainfall_inputs_from_frames,
     calculate_current_risk,
 )
+from app.services.web_push import VapidConfig
 
 logger = logging.getLogger(__name__)
 
@@ -150,17 +152,19 @@ async def _evaluate_and_dispatch_alert(
 
     Risk is derived from the freshly persisted forecast frames only; the
     scheduler has no live water-station client, which is sufficient for the
-    rainfall-driven basin risk used to gate alerts. Any failure here is logged
-    and swallowed so an alerting problem never fails an otherwise-successful
-    ingestion run.
+    rainfall-driven basin risk used to gate alerts. Both the LINE Notify and
+    Web Push channels fire on the same risk transition, each tracking its own
+    edge-triggered state. Any failure here is logged and swallowed so an
+    alerting problem never fails an otherwise-successful ingestion run.
 
     Args:
         repository: Mongo-backed forecast repository holding the latest frames.
-        settings: Application settings carrying the LINE token and cooldown.
+        settings: Application settings carrying the alert tokens, VAPID keys,
+            and cooldown.
 
     Returns:
-        The dispatch decision reason, or ``None`` when no alert was evaluated
-        (for example when no frames are available).
+        The LINE dispatch decision reason, or ``None`` when no alert was
+        evaluated (for example when no frames are available).
     """
     try:
         frames = await repository.list_frames(area_name=DEFAULT_AREA_NAME)
@@ -179,6 +183,21 @@ async def _evaluate_and_dispatch_alert(
             current_level=risk.level,
             valid_at=risk.freshness.valid_at,
             token=settings.line_notify_token,
+            cooldown_hours=settings.line_notify_cooldown_hours,
+            dashboard_url=settings.line_notify_dashboard_url,
+        )
+        subscription_repository = build_mongo_subscription_repository(
+            repository.database.client, repository.database.name
+        )
+        await dispatch_web_push_alert(
+            database=repository.database,
+            repository=subscription_repository,
+            current_level=risk.level,
+            valid_at=risk.freshness.valid_at,
+            vapid_config=VapidConfig(
+                private_key=settings.vapid_private_key,
+                subject=settings.vapid_subject,
+            ),
             cooldown_hours=settings.line_notify_cooldown_hours,
             dashboard_url=settings.line_notify_dashboard_url,
         )

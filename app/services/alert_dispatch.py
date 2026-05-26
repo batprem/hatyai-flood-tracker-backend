@@ -19,18 +19,23 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, JsonValue
 
 from app.schemas.common import RiskLevel
 from app.services.line_notify import send_line_notify
+from app.services.web_push import VapidConfig, send_web_push
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
+
+    from app.ingestion.subscription_repository import SubscriptionRepository
+    from app.schemas.push_subscription import PushSubscription
 
 logger = logging.getLogger(__name__)
 
 ALERT_STATE_COLLECTION = "alert_state"
 LINE_NOTIFY_SOURCE = "line_notify"
+WEB_PUSH_SOURCE = "web_push"
 
 #: Levels that warrant a public push. Green and yellow never alert.
 ALERTING_LEVELS: frozenset[RiskLevel] = frozenset({RiskLevel.ORANGE, RiskLevel.RED})
@@ -296,5 +301,187 @@ async def dispatch_risk_alert(
     await write_alert_state(
         database,
         AlertState(source=source, last_risk_level=current_level, alerted_at=evaluated_at),
+    )
+    return decision
+
+
+def build_web_push_payload(
+    *,
+    level: RiskLevel,
+    valid_at: datetime | None,
+    dashboard_url: str,
+) -> dict[str, JsonValue]:
+    """Build the bilingual Web Push payload consumed by the service worker.
+
+    The shape matches ``docs/service-worker-spec.md``: bilingual title/body
+    fields, the dashboard ``url`` to open on click, and the ``risk_level`` for
+    icon/color selection.
+
+    Args:
+        level: Risk level to announce (expected to be orange or red).
+        valid_at: Forecast valid time for the alerting risk, or ``None`` when
+            unknown.
+        dashboard_url: Public dashboard URL opened when the notification is
+            tapped.
+
+    Returns:
+        A JSON-serializable mapping with bilingual title/body, ``url``, and
+        ``risk_level`` keys.
+    """
+    th_label = _LEVEL_LABEL_TH.get(level, level.value)
+    valid_text = (
+        valid_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M UTC") if valid_at is not None else "N/A"
+    )
+    return {
+        "title_en": f"Flood Alert – {level.value.upper()}",
+        "title_th": f"แจ้งเตือนน้ำท่วม – {th_label}",
+        "body_en": f"Basin risk level raised to {level.value.upper()}. Valid: {valid_text}.",
+        "body_th": f"ความเสี่ยงน้ำท่วมระดับ{th_label} ณ {valid_text}",
+        "url": dashboard_url,
+        "risk_level": level.value,
+    }
+
+
+async def send_web_push_alerts(
+    subscriptions: list[PushSubscription],
+    payload: dict[str, JsonValue],
+    vapid_config: VapidConfig,
+    *,
+    repository: SubscriptionRepository,
+) -> int:
+    """Push ``payload`` to every subscription and prune expired endpoints.
+
+    Each subscription is delivered independently: a transport error or a
+    non-success status is logged and the loop continues so one dead endpoint
+    cannot block the rest. A 404/410 response means the browser dropped the
+    subscription, so it is deleted from the repository (HFT-52 pruning). An
+    empty ``vapid_config.private_key`` short-circuits with a warning so
+    non-production environments never error.
+
+    Args:
+        subscriptions: Subscriptions to deliver to.
+        payload: JSON-serializable push payload shared across recipients.
+        vapid_config: VAPID credentials used to sign each request.
+        repository: Subscription store used to prune expired endpoints.
+
+    Returns:
+        The number of subscriptions that accepted the push (HTTP 2xx).
+    """
+    if not vapid_config.private_key:
+        logger.warning(
+            "Web Push would fire for %d subscriptions but VAPID_PRIVATE_KEY is empty; skipping",
+            len(subscriptions),
+        )
+        return 0
+
+    sent = 0
+    for subscription in subscriptions:
+        try:
+            result = await send_web_push(subscription, payload, vapid_config=vapid_config)
+        except Exception:
+            logger.warning(
+                "Web Push send raised for endpoint %s; continuing",
+                subscription.endpoint,
+                exc_info=True,
+            )
+            continue
+
+        if result.gone:
+            await repository.delete_subscription(subscription.endpoint)
+            logger.info(
+                "Web Push pruned expired subscription %s (http %s)",
+                subscription.endpoint,
+                result.status_code,
+            )
+            continue
+
+        if result.status_code is not None and 200 <= result.status_code < 300:
+            sent += 1
+        else:
+            logger.warning(
+                "Web Push send failed for endpoint %s (http %s); continuing",
+                subscription.endpoint,
+                result.status_code,
+            )
+
+    logger.info("Web Push dispatched: %d of %d subscriptions accepted", sent, len(subscriptions))
+    return sent
+
+
+async def dispatch_web_push_alert(
+    *,
+    database: AsyncIOMotorDatabase,
+    repository: SubscriptionRepository,
+    current_level: RiskLevel,
+    valid_at: datetime | None,
+    vapid_config: VapidConfig,
+    cooldown_hours: int,
+    dashboard_url: str,
+    now: datetime | None = None,
+) -> AlertDecision:
+    """Evaluate the alert rule and broadcast a Web Push to all subscribers.
+
+    Uses the same edge-triggered transition and cooldown rules as the LINE
+    channel (:func:`should_send_alert`) but against an independent ``web_push``
+    alert-state document so the two channels never interfere. An empty
+    ``vapid_config.private_key`` short-circuits to a logged warning so
+    non-production environments never error. State is only persisted after at
+    least one successful send so a transient delivery failure is retried on the
+    next run.
+
+    Args:
+        database: Motor database holding the ``alert_state`` collection.
+        repository: Subscription store used to read recipients and prune dead
+            endpoints.
+        current_level: Freshly computed basin risk level.
+        valid_at: Forecast valid time for the alerting risk, or ``None``.
+        vapid_config: VAPID credentials used to sign each push.
+        cooldown_hours: Minimum hours between alerts for an unchanged level.
+        dashboard_url: Public dashboard URL opened from the notification.
+        now: Current UTC timestamp. Defaults to ``None`` (uses ``datetime.now``).
+
+    Returns:
+        The :class:`AlertDecision` describing whether a broadcast was sent.
+    """
+    evaluated_at = now or datetime.now(UTC)
+    state = await read_alert_state(database, source=WEB_PUSH_SOURCE)
+    decision = should_send_alert(
+        current_level=current_level,
+        state=state,
+        now=evaluated_at,
+        cooldown_hours=cooldown_hours,
+    )
+
+    if not decision.should_send:
+        logger.info("Web Push alert suppressed: %s", decision.reason)
+        return decision
+
+    if not vapid_config.private_key:
+        logger.warning(
+            "Web Push alert would fire (%s) but VAPID_PRIVATE_KEY is empty; skipping send",
+            decision.reason,
+        )
+        return AlertDecision(
+            should_send=False,
+            reason=f"vapid key unset; would have sent ({decision.reason})",
+        )
+
+    subscriptions = await repository.list_subscriptions()
+    payload = build_web_push_payload(
+        level=current_level,
+        valid_at=valid_at,
+        dashboard_url=dashboard_url,
+    )
+    sent = await send_web_push_alerts(
+        subscriptions,
+        payload,
+        vapid_config,
+        repository=repository,
+    )
+    logger.info("Web Push alert sent: %s (%d delivered)", decision.reason, sent)
+
+    await write_alert_state(
+        database,
+        AlertState(source=WEB_PUSH_SOURCE, last_risk_level=current_level, alerted_at=evaluated_at),
     )
     return decision

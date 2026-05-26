@@ -17,6 +17,11 @@ from app.ingestion.station_repository import (
     build_mongo_station_repository,
 )
 from app.ingestion.station_thresholds import seed_station_thresholds
+from app.ingestion.subscription_repository import (
+    DryRunSubscriptionRepository,
+    SubscriptionRepository,
+    build_mongo_subscription_repository,
+)
 from app.ingestion.thaiwater_client import (
     ThaiwaterStationClient,
     build_thaiwater_client,
@@ -36,6 +41,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
     repository_already_set = hasattr(app.state, "forecast_repository")
     station_repository_already_set = hasattr(app.state, "station_repository")
+    subscription_repository_already_set = hasattr(app.state, "subscription_repository")
     thaiwater_client_already_set = hasattr(app.state, "thaiwater_client")
     thaiwater_http_already_set = hasattr(app.state, "thaiwater_http")
     mongo_client: AsyncIOMotorClient | None = getattr(app.state, "mongo_client", None)
@@ -75,6 +81,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else:
             app.state.threshold_database = None
 
+    if not subscription_repository_already_set:
+        if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
+            if mongo_client is None:
+                mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
+                app.state.mongo_client = mongo_client
+            subscription_repo: SubscriptionRepository = build_mongo_subscription_repository(
+                mongo_client, settings.mongodb_database
+            )
+            await subscription_repo.ensure_indexes()
+            app.state.subscription_repository = subscription_repo
+        else:
+            app.state.subscription_repository = DryRunSubscriptionRepository()
+
     if not thaiwater_client_already_set:
         if not thaiwater_http_already_set:
             app.state.thaiwater_http = httpx.AsyncClient(
@@ -105,6 +124,7 @@ def create_app(
     settings: Settings | None = None,
     forecast_repository: ForecastRepository | None = None,
     station_repository: StationObservationRepository | None = None,
+    subscription_repository: SubscriptionRepository | None = None,
     thaiwater_client: ThaiwaterStationClient | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
@@ -113,6 +133,8 @@ def create_app(
         settings: Application settings. Defaults to ``None``.
         forecast_repository: Forecast repository. Defaults to ``None``.
         station_repository: Station repository. Defaults to ``None``.
+        subscription_repository: Web Push subscription repository. Defaults to
+            ``None``.
         thaiwater_client: ThaiWater client. Defaults to ``None``.
 
     Returns:
@@ -139,6 +161,10 @@ def create_app(
         app.state.station_repository = station_repository
     elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
         app.state.station_repository = DryRunStationRepository()
+    if subscription_repository is not None:
+        app.state.subscription_repository = subscription_repository
+    elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
+        app.state.subscription_repository = DryRunSubscriptionRepository()
     if thaiwater_client is not None:
         app.state.thaiwater_client = thaiwater_client
 
@@ -147,7 +173,7 @@ def create_app(
         allow_origins=resolved_settings.allowed_cors_origins(),
         allow_origin_regex=resolved_settings.cors_origin_regex,
         allow_credentials=True,
-        allow_methods=["GET", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
 

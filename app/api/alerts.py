@@ -1,15 +1,23 @@
-"""Dev-only endpoint to smoke-test the LINE Notify alert channel."""
+"""Alert-channel endpoints: LINE smoke-test plus Web Push subscriptions."""
 
 import secrets
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_app_settings
+from app.api.deps import get_app_settings, get_subscription_repository
 from app.core.config import Settings
+from app.ingestion.subscription_repository import SubscriptionRepository
 from app.schemas.common import RiskLevel
+from app.schemas.push_subscription import (
+    PushSubscription,
+    PushSubscriptionRequest,
+    PushSubscriptionResponse,
+    PushUnsubscribeRequest,
+    VapidPublicKeyResponse,
+)
 from app.services.alert_dispatch import format_alert_message
 from app.services.line_notify import send_line_notify
 
@@ -76,3 +84,75 @@ async def trigger_test_alert(
     )
     line_status = await send_line_notify(settings.line_notify_token, message)
     return AlertTestResponse(status="sent", line_status=line_status)
+
+
+@router.get("/vapid-public-key", response_model=VapidPublicKeyResponse)
+async def get_vapid_public_key(
+    settings: Annotated[Settings, Depends(get_app_settings)],
+) -> VapidPublicKeyResponse:
+    """Return the public VAPID key the frontend uses to subscribe to push.
+
+    Public and unauthenticated: the key is non-secret by design (it is the
+    browser ``applicationServerKey``). An empty value signals that Web Push is
+    not configured for this deployment.
+
+    Args:
+        settings: Application settings injected via dependency.
+
+    Returns:
+        The base64url VAPID public key, empty when Web Push is unconfigured.
+    """
+    return VapidPublicKeyResponse(vapid_public_key=settings.vapid_public_key)
+
+
+@router.post(
+    "/subscriptions",
+    response_model=PushSubscriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_subscription(
+    body: PushSubscriptionRequest,
+    repository: Annotated[SubscriptionRepository, Depends(get_subscription_repository)],
+) -> PushSubscriptionResponse:
+    """Register or refresh a browser Web Push subscription.
+
+    Idempotent on ``endpoint``: re-posting the same browser subscription
+    refreshes its keys without creating a duplicate. The server assigns
+    ``created_at`` so clients cannot spoof it.
+
+    Args:
+        body: Native W3C ``PushSubscription.toJSON()`` payload from the browser.
+        repository: Subscription store injected via dependency.
+
+    Returns:
+        Confirmation carrying the stored endpoint.
+    """
+    subscription = PushSubscription(
+        endpoint=body.endpoint,
+        p256dh=body.keys.p256dh,
+        auth=body.keys.auth,
+        created_at=datetime.now(UTC),
+    )
+    await repository.upsert_subscription(subscription)
+    return PushSubscriptionResponse(status="subscribed", endpoint=subscription.endpoint)
+
+
+@router.delete("/subscriptions", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_subscription(
+    body: PushUnsubscribeRequest,
+    repository: Annotated[SubscriptionRepository, Depends(get_subscription_repository)],
+) -> Response:
+    """Remove a browser Web Push subscription by endpoint.
+
+    Idempotent: deleting an unknown endpoint still returns 204 so a client that
+    retries an unsubscribe never sees an error.
+
+    Args:
+        body: Request body carrying the endpoint to remove.
+        repository: Subscription store injected via dependency.
+
+    Returns:
+        An empty ``204 No Content`` response.
+    """
+    await repository.delete_subscription(body.endpoint)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

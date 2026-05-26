@@ -4,6 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.core.config import Settings, get_settings
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
+from app.ingestion.subscription_repository import SubscriptionRepository
 from app.ingestion.thaiwater_client import StationObservationClient
 
 
@@ -90,3 +91,22 @@ def get_threshold_database(request: Request) -> AsyncIOMotorDatabase | None:
         The threshold-backing database handle, or ``None`` when not configured.
     """
     return getattr(request.app.state, "threshold_database", None)
+
+
+def get_subscription_repository(request: Request) -> SubscriptionRepository:
+    """Return the lifespan-managed Web Push subscription repository.
+
+    Args:
+        request: The FastAPI request object providing access to app state.
+
+    Returns:
+        The push subscription repository configured during application startup.
+
+    Raises:
+        RuntimeError: If the subscription repository is missing on ``app.state``.
+    """
+    repository = getattr(request.app.state, "subscription_repository", None)
+    if repository is None:
+        msg = "subscription repository is not configured on app.state"
+        raise RuntimeError(msg)
+    return repository
