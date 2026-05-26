@@ -24,6 +24,8 @@ from app.ingestion.repository import (
     DryRunForecastRepository,
     ForecastRepository,
 )
+from app.ingestion.station_repository import build_mongo_station_repository
+from app.services.data_quality import evaluate_and_alert
 
 logger = logging.getLogger(__name__)
 
@@ -99,10 +101,13 @@ async def run_mongo_ingestion(
     Returns:
         Dictionary with ingestion results including runs, frames, failures, and freshness metadata.
     """
+    settings = get_settings()
     client = AsyncIOMotorClient(mongodb_uri)
     try:
         repository = build_mongo_repository(client, mongodb_database)
         await repository.ensure_indexes()
+        station_repository = build_mongo_station_repository(client, mongodb_database)
+        await station_repository.ensure_indexes()
         runs, frames, failures = await _ingest_into_repository(
             repository,
             providers=providers,
@@ -110,6 +115,9 @@ async def run_mongo_ingestion(
             use_fixtures=use_fixtures,
         )
         freshness = to_json_value(await repository.freshness_summary())
+        # Phase 2 log-based stale-data alerting: emit one structured ERROR log
+        # per breaching source so it is queryable in the Railway log stream.
+        await evaluate_and_alert(repository, station_repository, settings)
     finally:
         client.close()
 

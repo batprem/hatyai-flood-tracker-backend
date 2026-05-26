@@ -9,7 +9,12 @@ from pydantic import BaseModel
 from pymongo import ASCENDING, DESCENDING
 from pymongo.errors import CollectionInvalid
 
-from app.ingestion.models import ForecastFrame, ForecastRun, FreshnessStatus
+from app.ingestion.models import (
+    ForecastFrame,
+    ForecastRun,
+    ForecastRunStatus,
+    FreshnessStatus,
+)
 from app.ingestion.repository import MongoDocument, _to_mongo_document
 
 if TYPE_CHECKING:
@@ -203,14 +208,28 @@ class MongoForecastRepository:
             }
 
         frame_count = await self._frames.count_documents({"runId": latest["runId"]})
+        run_status = latest.get("status")
+        error_reason = latest.get("errorReason")
+        status = latest["freshnessStatus"]
+        reason: str | None = None
+        # An ingestion run that ended FAILED must surface as a failed freshness
+        # status with an operator-readable reason even if the stored
+        # freshnessStatus (computed from run age) still reads fresh.
+        if run_status == ForecastRunStatus.FAILED.value:
+            status = FreshnessStatus.FAILED.value
+            reason = error_reason or "latest ingestion run failed"
+        elif run_status == ForecastRunStatus.PARTIAL.value:
+            reason = error_reason or "latest ingestion run produced partial coverage"
         summary: MongoDocument = {
             "provider": latest["provider"],
             "model": latest["model"],
             "runTime": latest["runTime"],
             "retrievedAt": latest["retrievedAt"],
-            "status": latest["freshnessStatus"],
+            "status": status,
+            "runStatus": run_status,
             "thresholdHours": latest["freshnessThresholdHours"],
             "frameCount": frame_count,
+            "reason": reason,
         }
         return summary
 
