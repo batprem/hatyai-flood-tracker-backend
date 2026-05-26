@@ -204,6 +204,32 @@ class Settings(BaseSettings):
             "rejects every request so a misconfigured deploy cannot be triggered."
         ),
     )
+    vapid_private_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("HFT_VAPID_PRIVATE_KEY", "VAPID_PRIVATE_KEY"),
+        description=(
+            "Base64url-encoded VAPID private key used to sign Web Push requests. When "
+            "empty the Web Push dispatcher logs a warning and skips sending so "
+            "non-production environments do not error. Never commit a real key. "
+            "Generate with `uv run python scripts/generate_vapid_keys.py`."
+        ),
+    )
+    vapid_public_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("HFT_VAPID_PUBLIC_KEY", "VAPID_PUBLIC_KEY"),
+        description=(
+            "Base64url-encoded VAPID public key (the browser applicationServerKey) "
+            "served by GET /api/alerts/vapid-public-key so the frontend can subscribe."
+        ),
+    )
+    vapid_subject: str = Field(
+        default="mailto:admin@hatyai-flood.example.com",
+        validation_alias=AliasChoices("HFT_VAPID_SUBJECT", "VAPID_SUBJECT"),
+        description=(
+            "VAPID 'sub' claim identifying the application server contact. Must be a "
+            "mailto: or https: URI per the Web Push VAPID spec."
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file="dev.env",
