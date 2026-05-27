@@ -27,6 +27,7 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 COPY app ./app
 COPY main.py ./main.py
+COPY data ./data
 
 RUN uv sync --frozen --no-dev
 
@@ -54,6 +55,7 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/main.py ./main.py
+COPY --from=builder /app/data ./data
 COPY pyproject.toml uv.lock ./
 
 USER app
