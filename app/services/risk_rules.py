@@ -2,6 +2,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
+from shapely.geometry import Point
+
+from app.geo.basin import get_basin_polygon
 from app.ingestion.models import ForecastFrame
 from app.schemas.common import DataFreshness, RiskLevel
 from app.schemas.risk import (
@@ -137,12 +140,15 @@ def build_rainfall_inputs_from_frames(
     """Derive rainfall risk inputs from stored forecast frames.
 
     Each frame becomes one input where ``rainfall_mm`` is the maximum cell value
-    across the basin grid. This conservatively follows the rule that the public
-    status takes the maximum risk across relevant basin cells (see
-    ``docs/risk-layer-design.md`` lines 22-43 and 60-62). The ``area_id`` is
-    composed of provider, model, valid time, and accumulation window so each
-    frame is a distinct scored unit and downstream coverage counts reflect the
-    actual distinct basin observations rather than collapsing windows.
+    over the grid cells whose reconstructed lon/lat fall inside the committed
+    U-Tapao basin polygon (see ``app.geo.basin``). Clipping to the true basin
+    boundary keeps the rectangular GRIB download bounding box from inflating the
+    public level with rainfall outside the drainage basin, while still taking the
+    maximum risk across relevant basin cells (see ``docs/risk-layer-design.md``
+    lines 22-43 and 60-62). Frames with no cell inside the basin are skipped. The
+    ``area_id`` is composed of provider, model, valid time, and accumulation
+    window so each frame is a distinct scored unit and downstream coverage counts
+    reflect the actual distinct basin observations rather than collapsing windows.
 
     Args:
         frames: Normalized forecast frames persisted in MongoDB.
@@ -154,7 +160,9 @@ def build_rainfall_inputs_from_frames(
     for frame in frames:
         if not frame.values_mm:
             continue
-        rainfall_mm = max(frame.values_mm)
+        rainfall_mm = _basin_clipped_max(frame)
+        if rainfall_mm is None:
+            continue
         valid_iso = frame.valid_time.astimezone(UTC).strftime("%Y%m%dT%H%MZ")
         area_id = f"{frame.provider.value}:{frame.model}:{frame.accumulation_hours}h:{valid_iso}"
         area_name = (
@@ -175,6 +183,45 @@ def build_rainfall_inputs_from_frames(
             )
         )
     return inputs
+
+
+def _basin_clipped_max(frame: ForecastFrame) -> float | None:
+    """Return the max rainfall over frame cells inside the U-Tapao basin polygon.
+
+    The frame's ``values_mm`` is a flat list in GRIB scan order for a regular
+    lat/lon grid: row-major with the first row at the north edge and columns
+    running west to east (``iScansPositively``/``jScansNegatively``, the GFS and
+    ECMWF Open Data default already assumed elsewhere in this codebase). Cell
+    ``index`` maps to ``col = index % width`` and ``row = index // width``, so
+    ``lon = west + col * resolution`` and ``lat = north - row * resolution``. The
+    bounding box comes from the frame's ``area`` (west, south, east, north) and
+    stays the GRIB download box; only aggregation is clipped to the real basin.
+
+    Args:
+        frame: One normalized rainfall forecast frame.
+
+    Returns:
+        The maximum rainfall in mm over cells whose centre falls inside the
+        basin polygon, or ``None`` when the grid is malformed (cell count does
+        not match ``width * height``) or no cell centre lies inside the basin.
+    """
+    width = frame.grid.width
+    height = frame.grid.height
+    resolution = frame.grid.resolution_degrees
+    if width <= 0 or height <= 0 or len(frame.values_mm) != width * height:
+        return None
+
+    west, _south, _east, north = frame.area.bbox
+    basin = get_basin_polygon()
+    clipped: float | None = None
+    for index, value in enumerate(frame.values_mm):
+        col = index % width
+        row = index // width
+        lon = west + col * resolution
+        lat = north - row * resolution
+        if basin.contains(Point(lon, lat)) and (clipped is None or value > clipped):
+            clipped = value
+    return clipped
 
 
 def score_water_level(

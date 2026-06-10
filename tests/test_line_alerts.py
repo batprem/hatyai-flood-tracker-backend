@@ -274,7 +274,7 @@ class DispatchRiskAlertTests(unittest.IsolatedAsyncioTestCase):
 class SchedulerHookTests(unittest.IsolatedAsyncioTestCase):
     async def test_evaluate_dispatches_when_frames_drive_orange(self) -> None:
         from app.ingestion.forecast_cli import _evaluate_and_dispatch_alert
-        from app.ingestion.models import ForecastProvider, ForecastRunStatus
+        from app.ingestion.models import ForecastProvider, ForecastRunStatus, Phase1Area
         from app.ingestion.mongo_repository import build_mongo_repository
         from app.ingestion.normalizer import build_run_record, normalize_frames
         from app.ingestion.providers import build_provider_client
@@ -289,7 +289,15 @@ class SchedulerHookTests(unittest.IsolatedAsyncioTestCase):
         run = build_run_record(run_ref, artifacts, retrieved_at).model_copy(
             update={"status": ForecastRunStatus.STORED}
         )
-        frames = normalize_frames(run_ref, artifacts, retrieved_at)
+        # The coarse 2x2 GFS fixture grid sits on the default bounding box, whose
+        # cell centres fall outside the basin polygon. Normalize against a box
+        # whose cells land inside the basin so clipping keeps the fixture frame.
+        frames = normalize_frames(
+            run_ref,
+            artifacts,
+            retrieved_at,
+            area=Phase1Area(bbox=(100.30, 6.70, 100.55, 6.95)),
+        )
         await repository.upsert_run(run)
         await repository.upsert_frames(frames)
 
