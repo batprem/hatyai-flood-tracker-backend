@@ -1,0 +1,208 @@
+{
+  "type": "FeatureCollection",
+  "name": "Hat Yai Flood Evacuation Shelters",
+  "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+  "retrieved_date": "2026-06-12",
+  "accuracy_note": "Coordinates are OpenStreetMap facility locations (node position or polygon centroid), not surveyed shelter entrances; expect up to ~100 m offset within large campuses. Shelter designations come from the November 2025 (B.E. 2568) Hat Yai flood response announcements by Hat Yai City, Ban Phru Town, and Kho Hong Town municipalities and the Prime Minister's Office, as compiled by Thai news outlets; activation status and capacity may differ in future flood events. All 8 points verified inside the U-Tapao basin polygon (basin_utapao.geojson, HydroBASINS level 7) with shapely on 2026-06-12.",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "ศูนย์กีฬาและนันทนาการ มหาวิทยาลัยสงขลานครินทร์ (ม.อ. หาดใหญ่)",
+        "name_en": "Prince of Songkla University Sports and Recreation Center (PSU Sport Complex)",
+        "type": "university",
+        "municipality_th": "เทศบาลเมืองคอหงส์ / มหาวิทยาลัยสงขลานครินทร์",
+        "capacity": 3000,
+        "source": "Prime Minister's Office shelter announcement, Nov 2025 Hat Yai flood (via Thairath); list compiled by Kapook",
+        "source_url": "https://www.thairath.co.th/scoop/theissue/2897350",
+        "coordinate_source": "OpenStreetMap way/858854620",
+        "coordinate_source_url": "https://www.openstreetmap.org/way/858854620",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326",
+        "accuracy_note": "Coordinates are OpenStreetMap facility locations (node position or polygon centroid), not surveyed shelter entrances; expect up to ~100 m offset within large campuses. Shelter designations come from the November 2025 (B.E. 2568) Hat Yai flood response announcements by Hat Yai City, Ban Phru Town, and Kho Hong Town municipalities and the Prime Minister's Office, as compiled by Thai news outlets; activation status and capacity may differ in future flood events. All 8 points verified inside the U-Tapao basin polygon (basin_utapao.geojson, HydroBASINS level 7) with shapely on 2026-06-12."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.5010529,
+          7.0107159
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "โรงเรียนเทศบาล ๑ (เอ็งเสียงสามัคคี)",
+        "name_en": "Thetsaban 1 School (Eng Siang Samakkhi)",
+        "type": "school",
+        "municipality_th": "เทศบาลนครหาดใหญ่",
+        "capacity": null,
+        "source": "Hat Yai City Municipality shelter list, Nov 2025 flood (compiled by Kapook)",
+        "source_url": "https://hilight.kapook.com/view/250584",
+        "coordinate_source": "OpenStreetMap node/4365589912",
+        "coordinate_source_url": "https://www.openstreetmap.org/node/4365589912",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.4702565,
+          7.0157287
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "โรงเรียนเทศบาล ๒ (บ้านหาดใหญ่)",
+        "name_en": "Thetsaban 2 School (Ban Hat Yai)",
+        "type": "school",
+        "municipality_th": "เทศบาลนครหาดใหญ่",
+        "capacity": null,
+        "source": "Hat Yai City Municipality shelter list, Nov 2025 flood (compiled by Kapook)",
+        "source_url": "https://hilight.kapook.com/view/250584",
+        "coordinate_source": "OpenStreetMap node/4365581814",
+        "coordinate_source_url": "https://www.openstreetmap.org/node/4365581814",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.45957,
+          7.00185
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "โรงเรียนเทศบาล ๓ (โศภณพิทยาคุณานุสรณ์)",
+        "name_en": "Thetsaban 3 School (Sophon Phitthaya Khunanusorn)",
+        "type": "school",
+        "municipality_th": "เทศบาลนครหาดใหญ่",
+        "capacity": null,
+        "source": "Hat Yai City Municipality shelter list, Nov 2025 flood (compiled by Kapook)",
+        "source_url": "https://hilight.kapook.com/view/250584",
+        "coordinate_source": "OpenStreetMap node/1137166952",
+        "coordinate_source_url": "https://www.openstreetmap.org/node/1137166952",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.49491,
+          7.02019
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "โรงเรียนเทศบาล ๔ (วัดคลองเรียน)",
+        "name_en": "Thetsaban 4 School (Wat Khlong Rian)",
+        "type": "school",
+        "municipality_th": "เทศบาลนครหาดใหญ่",
+        "capacity": null,
+        "source": "Hat Yai City Municipality shelter list, Nov 2025 flood (compiled by Kapook)",
+        "source_url": "https://hilight.kapook.com/view/250584",
+        "coordinate_source": "OpenStreetMap node/4365589721",
+        "coordinate_source_url": "https://www.openstreetmap.org/node/4365589721",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.48548,
+          6.99872
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "วัดเทพชุมนุม",
+        "name_en": "Wat Thep Chumnum",
+        "type": "temple",
+        "municipality_th": "เทศบาลเมืองบ้านพรุ",
+        "capacity": null,
+        "source": "Ban Phru Town Municipality shelter list, Nov 2025 flood (via Thairath; compiled by Kapook)",
+        "source_url": "https://www.thairath.co.th/scoop/theissue/2897350",
+        "coordinate_source": "OpenStreetMap node/2505175688",
+        "coordinate_source_url": "https://www.openstreetmap.org/node/2505175688",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.4722,
+          6.95354
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "ค่ายเสนาณรงค์ (มณฑลทหารบกที่ 42)",
+        "name_en": "Sena Narong Camp (42nd Military Circle)",
+        "type": "other",
+        "municipality_th": "เทศบาลเมืองคอหงส์",
+        "capacity": null,
+        "source": "Kho Hong Town Municipality shelter list, Nov 2025 flood (compiled by Kapook)",
+        "source_url": "https://hilight.kapook.com/view/250584",
+        "coordinate_source": "OpenStreetMap node/1662778286",
+        "coordinate_source_url": "https://www.openstreetmap.org/node/1662778286",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.50094,
+          7.02542
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name_th": "ศูนย์ประชุมนานาชาติฉลองสิริราชสมบัติครบ ๖๐ ปี",
+        "name_en": "The 60th Anniversary of His Majesty the King's Accession to the Throne International Convention Center",
+        "type": "community_center",
+        "municipality_th": "เทศบาลเมืองคอหงส์",
+        "capacity": null,
+        "source": "Kho Hong Town Municipality shelter list, Nov 2025 flood (compiled by Kapook)",
+        "source_url": "https://hilight.kapook.com/view/250584",
+        "coordinate_source": "OpenStreetMap way/101677210",
+        "coordinate_source_url": "https://www.openstreetmap.org/way/101677210",
+        "license": "Coordinates (c) OpenStreetMap contributors, Open Database License (ODbL) 1.0 - https://www.openstreetmap.org/copyright. Shelter designations compiled from public Thai government and news announcements during the November 2025 (B.E. 2568) Hat Yai flood.",
+        "retrieved_date": "2026-06-12",
+        "crs": "EPSG:4326"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          100.50525,
+          7.00176
+        ]
+      }
+    }
+  ]
+}
