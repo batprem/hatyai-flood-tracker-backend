@@ -26,6 +26,10 @@ from app.services.risk_rules import (
 GFS = ForecastProvider.GFS.value
 ECMWF = ForecastProvider.ECMWF_OPEN_DATA.value
 
+# Bounding box whose 2x2 0.25-degree grid cells all fall inside the committed
+# U-Tapao basin polygon, so frame-driven fixtures survive basin clipping.
+_BASIN_INSIDE_BBOX: tuple[float, float, float, float] = (100.30, 6.70, 100.55, 6.95)
+
 
 def _settings() -> RiskRuleSettings:
     return RiskRuleSettings(
@@ -72,7 +76,7 @@ def _frame(
         forecast_hour=forecast_hour,
         retrieved_at=run_time + timedelta(minutes=30),
         processed_at=run_time + timedelta(minutes=30),
-        area=Phase1Area(),
+        area=Phase1Area(bbox=_BASIN_INSIDE_BBOX),
         grid=ForecastGrid(resolution_degrees=0.25, width=2, height=2),
         values_mm=values_mm,
         source=ForecastSource(

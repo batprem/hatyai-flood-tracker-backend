@@ -11,6 +11,7 @@ from app.api.deps import (
     get_threshold_database,
 )
 from app.core.config import Settings, get_settings
+from app.geo.basin import BASIN_GEOMETRY_REF
 from app.ingestion.models import ForecastProvider
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
@@ -115,4 +116,5 @@ async def read_current_risk(
         thresholds=thresholds,
     )
     response.degraded_inputs = not stations
+    response.basin_geometry_ref = BASIN_GEOMETRY_REF
     return response

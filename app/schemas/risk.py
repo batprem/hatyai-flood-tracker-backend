@@ -173,6 +173,10 @@ class CurrentRiskResponse(BaseModel):
         default=False,
         description="True when only one provider was fresh enough to drive the ensemble.",
     )
+    basin_geometry_ref: str = Field(
+        default="basin_utapao.geojson",
+        description="Filename of the committed GeoJSON basin boundary used for this aggregation.",
+    )
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -264,6 +268,7 @@ class CurrentRiskResponse(BaseModel):
                     },
                 ],
                 "single_provider_warning": False,
+                "basin_geometry_ref": "basin_utapao.geojson",
             }
         }
     )

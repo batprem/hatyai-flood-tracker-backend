@@ -23,6 +23,10 @@ from app.services.risk_rules import (
     calculate_current_risk,
 )
 
+# Bounding box whose 2x2 0.25-degree grid cells all fall inside the committed
+# U-Tapao basin polygon, so frame-driven fixtures survive basin clipping.
+_BASIN_INSIDE_BBOX: tuple[float, float, float, float] = (100.30, 6.70, 100.55, 6.95)
+
 
 def risk_settings() -> RiskRuleSettings:
     return RiskRuleSettings(
@@ -144,6 +148,8 @@ def _frame(
     accumulation_hours: int,
     values_mm: list[float],
     forecast_hour: int,
+    grid_width: int = 2,
+    grid_height: int = 2,
 ) -> ForecastFrame:
     valid_time = run_time + timedelta(hours=forecast_hour)
     window_start = valid_time - timedelta(hours=accumulation_hours)
@@ -164,8 +170,8 @@ def _frame(
         forecast_hour=forecast_hour,
         retrieved_at=run_time + timedelta(minutes=30),
         processed_at=run_time + timedelta(minutes=30),
-        area=Phase1Area(),
-        grid=ForecastGrid(resolution_degrees=0.25, width=2, height=2),
+        area=Phase1Area(bbox=_BASIN_INSIDE_BBOX),
+        grid=ForecastGrid(resolution_degrees=0.25, width=grid_width, height=grid_height),
         values_mm=values_mm,
         source=ForecastSource(
             url="https://example.test/fixture",
@@ -220,6 +226,8 @@ class FrameDrivenRiskTest(TestCase):
             accumulation_hours=6,
             forecast_hour=6,
             values_mm=[10.0],
+            grid_width=1,
+            grid_height=1,
         )
         inputs = build_rainfall_inputs_from_frames([valid_frame])
         self.assertEqual(len(inputs), 1)
