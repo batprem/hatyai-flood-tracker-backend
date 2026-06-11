@@ -2,10 +2,12 @@ from fastapi import Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.config import Settings, get_settings
+from app.ingestion.report_repository import ReportRepository
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
 from app.ingestion.subscription_repository import SubscriptionRepository
 from app.ingestion.thaiwater_client import StationObservationClient
+from app.services.photo_storage import PhotoStorage
 
 
 def get_app_settings(request: Request) -> Settings:
@@ -110,3 +112,41 @@ def get_subscription_repository(request: Request) -> SubscriptionRepository:
         msg = "subscription repository is not configured on app.state"
         raise RuntimeError(msg)
     return repository
+
+
+def get_report_repository(request: Request) -> ReportRepository:
+    """Return the lifespan-managed citizen-report repository.
+
+    Args:
+        request: The FastAPI request object providing access to app state.
+
+    Returns:
+        The citizen-report repository configured during application startup.
+
+    Raises:
+        RuntimeError: If the report repository is missing on ``app.state``.
+    """
+    repository = getattr(request.app.state, "report_repository", None)
+    if repository is None:
+        msg = "report repository is not configured on app.state"
+        raise RuntimeError(msg)
+    return repository
+
+
+def get_photo_storage(request: Request) -> PhotoStorage:
+    """Return the lifespan-managed report photo storage backend.
+
+    Args:
+        request: The FastAPI request object providing access to app state.
+
+    Returns:
+        The photo storage backend configured during application startup.
+
+    Raises:
+        RuntimeError: If the photo storage is missing on ``app.state``.
+    """
+    storage = getattr(request.app.state, "photo_storage", None)
+    if storage is None:
+        msg = "photo storage is not configured on app.state"
+        raise RuntimeError(msg)
+    return storage
