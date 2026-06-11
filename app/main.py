@@ -9,6 +9,10 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from app.api.health import router as health_router
 from app.api.routes import api_router
 from app.core.config import ForecastRepositoryBackend, Settings, get_settings
+from app.ingestion.delivery_repository import (
+    DryRunDeliveryRepository,
+    build_mongo_delivery_repository,
+)
 from app.ingestion.mongo_repository import MongoForecastRepository, build_mongo_repository
 from app.ingestion.report_repository import (
     DryRunReportRepository,
@@ -53,6 +57,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     station_repository_already_set = hasattr(app.state, "station_repository")
     subscription_repository_already_set = hasattr(app.state, "subscription_repository")
     report_repository_already_set = hasattr(app.state, "report_repository")
+    delivery_repository_already_set = hasattr(app.state, "delivery_repository")
     photo_storage_already_set = hasattr(app.state, "photo_storage")
     thaiwater_client_already_set = hasattr(app.state, "thaiwater_client")
     thaiwater_http_already_set = hasattr(app.state, "thaiwater_http")
@@ -119,6 +124,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else:
             app.state.report_repository = DryRunReportRepository()
 
+    if not delivery_repository_already_set:
+        if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
+            if mongo_client is None:
+                mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
+                app.state.mongo_client = mongo_client
+            delivery_repo = build_mongo_delivery_repository(
+                mongo_client, settings.mongodb_database
+            )
+            await delivery_repo.ensure_indexes()
+            app.state.delivery_repository = delivery_repo
+        else:
+            app.state.delivery_repository = DryRunDeliveryRepository()
+
     if not photo_storage_already_set:
         if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
             if mongo_client is None:
@@ -162,6 +180,7 @@ def create_app(
     station_repository: StationObservationRepository | None = None,
     subscription_repository: SubscriptionRepository | None = None,
     report_repository: ReportRepository | None = None,
+    delivery_repository: DryRunDeliveryRepository | None = None,
     photo_storage: PhotoStorage | None = None,
     thaiwater_client: ThaiwaterStationClient | None = None,
 ) -> FastAPI:
@@ -174,6 +193,8 @@ def create_app(
         subscription_repository: Web Push subscription repository. Defaults to
             ``None``.
         report_repository: Citizen-report repository. Defaults to ``None``.
+        delivery_repository: Alert delivery audit repository. Defaults to
+            ``None``.
         photo_storage: Report photo storage backend. Defaults to ``None``.
         thaiwater_client: ThaiWater client. Defaults to ``None``.
 
@@ -209,6 +230,10 @@ def create_app(
         app.state.report_repository = report_repository
     elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
         app.state.report_repository = DryRunReportRepository()
+    if delivery_repository is not None:
+        app.state.delivery_repository = delivery_repository
+    elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
+        app.state.delivery_repository = DryRunDeliveryRepository()
     if photo_storage is not None:
         app.state.photo_storage = photo_storage
     elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:

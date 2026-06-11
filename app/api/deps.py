@@ -2,6 +2,7 @@ from fastapi import Request
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.core.config import Settings, get_settings
+from app.ingestion.delivery_repository import DeliveryRepository
 from app.ingestion.report_repository import ReportRepository
 from app.ingestion.repository import ForecastRepository
 from app.ingestion.station_repository import StationObservationRepository
@@ -150,3 +151,22 @@ def get_photo_storage(request: Request) -> PhotoStorage:
         msg = "photo storage is not configured on app.state"
         raise RuntimeError(msg)
     return storage
+
+
+def get_delivery_repository(request: Request) -> DeliveryRepository:
+    """Return the lifespan-managed alert delivery audit repository.
+
+    Args:
+        request: The FastAPI request object providing access to app state.
+
+    Returns:
+        The delivery repository configured during application startup.
+
+    Raises:
+        RuntimeError: If the delivery repository is missing on ``app.state``.
+    """
+    repository = getattr(request.app.state, "delivery_repository", None)
+    if repository is None:
+        msg = "delivery repository is not configured on app.state"
+        raise RuntimeError(msg)
+    return repository
