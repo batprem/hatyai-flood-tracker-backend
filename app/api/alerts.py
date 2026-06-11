@@ -1,15 +1,17 @@
-"""Alert-channel endpoints: LINE smoke-test plus Web Push subscriptions."""
+"""Alert-channel endpoints: LINE smoke-test, Web Push subscriptions, audit log."""
 
 import secrets
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import get_app_settings, get_subscription_repository
+from app.api.deps import get_app_settings, get_delivery_repository, get_subscription_repository
 from app.core.config import Settings
+from app.ingestion.delivery_repository import DeliveryRepository
 from app.ingestion.subscription_repository import SubscriptionRepository
+from app.schemas.alert_delivery import AlertDeliveryListResponse
 from app.schemas.common import RiskLevel
 from app.schemas.push_subscription import (
     PushSubscription,
@@ -22,6 +24,9 @@ from app.services.alert_dispatch import format_alert_message
 from app.services.line_notify import send_line_notify
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
+
+_DEFAULT_RECENT_LIMIT = 50
+_MAX_RECENT_LIMIT = 200
 
 
 class AlertTestResponse(BaseModel):
@@ -156,3 +161,31 @@ async def delete_subscription(
     """
     await repository.delete_subscription(body.endpoint)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/recent", response_model=AlertDeliveryListResponse)
+async def list_recent_alerts(
+    repository: Annotated[DeliveryRepository, Depends(get_delivery_repository)],
+    limit: Annotated[
+        int,
+        Query(description="Maximum number of delivery records to return. Clamped to 200."),
+    ] = _DEFAULT_RECENT_LIMIT,
+) -> AlertDeliveryListResponse:
+    """Return the most recent alert delivery records, newest first.
+
+    Each record captures channel, risk level, timestamp, outcome, cooldown
+    context, and error detail for failed sends. Token values are never
+    included. Records are returned regardless of outcome so operators can
+    observe both sent and suppressed dispatches.
+
+    Args:
+        repository: Delivery audit repository injected via dependency.
+        limit: Maximum records to return. Clamped to a safe ceiling. Defaults
+            to 50.
+
+    Returns:
+        The delivery records with a count.
+    """
+    safe_limit = max(1, min(limit, _MAX_RECENT_LIMIT))
+    deliveries = await repository.recent(limit=safe_limit)
+    return AlertDeliveryListResponse(deliveries=deliveries, count=len(deliveries))

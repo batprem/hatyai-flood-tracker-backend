@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, JsonValue
 
+from app.ingestion.delivery_repository import DeliveryOutcome
+from app.schemas.alert_delivery import AlertDelivery
 from app.schemas.common import RiskLevel
 from app.services.line_notify import send_line_notify
 from app.services.web_push import VapidConfig, send_web_push
@@ -28,6 +30,7 @@ from app.services.web_push import VapidConfig, send_web_push
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
 
+    from app.ingestion.delivery_repository import DeliveryRepository
     from app.ingestion.subscription_repository import SubscriptionRepository
     from app.schemas.push_subscription import PushSubscription
 
@@ -235,6 +238,49 @@ async def write_alert_state(
     )
 
 
+async def _log_delivery(
+    *,
+    delivery_repository: DeliveryRepository | None,
+    channel: str,
+    risk_level: RiskLevel,
+    alerted_at: datetime,
+    outcome: DeliveryOutcome,
+    state: AlertState | None,
+    decision_reason: str,
+    error_detail: str | None = None,
+) -> None:
+    """Write a single delivery audit record when a repository is available.
+
+    Args:
+        delivery_repository: Audit repository, or ``None`` to skip logging.
+        channel: Alert channel identifier.
+        risk_level: Risk level being evaluated.
+        alerted_at: UTC timestamp of the dispatch evaluation.
+        outcome: Outcome of the send attempt.
+        state: Previously persisted alert state used for cooldown context.
+            Pass ``None`` when no prior state exists.
+        decision_reason: Human-readable rationale from the cooldown logic.
+        error_detail: Exception message on a failed outcome. Defaults to
+            ``None``.
+    """
+    if delivery_repository is None:
+        return
+    delivery = AlertDelivery(
+        channel=channel,
+        risk_level=risk_level,
+        alerted_at=alerted_at,
+        outcome=outcome.value,
+        previous_level=state.last_risk_level if state is not None else None,
+        previous_alerted_at=state.alerted_at if state is not None else None,
+        decision_reason=decision_reason,
+        error_detail=error_detail,
+    )
+    try:
+        await delivery_repository.append(delivery)
+    except Exception:
+        logger.warning("Failed to write delivery audit record; continuing", exc_info=True)
+
+
 async def dispatch_risk_alert(
     *,
     database: AsyncIOMotorDatabase,
@@ -245,6 +291,7 @@ async def dispatch_risk_alert(
     dashboard_url: str,
     now: datetime | None = None,
     source: str = LINE_NOTIFY_SOURCE,
+    delivery_repository: DeliveryRepository | None = None,
 ) -> AlertDecision:
     """Evaluate the alert rule and push a LINE alert when warranted.
 
@@ -253,6 +300,7 @@ async def dispatch_risk_alert(
     empty ``token`` short-circuits to a logged warning so non-production
     environments never error. The persisted state is only updated after a
     successful send so a transient transport failure is retried on the next run.
+    Every evaluation outcome is written to ``delivery_repository`` when provided.
 
     Args:
         database: Motor database holding the ``alert_state`` collection.
@@ -263,6 +311,8 @@ async def dispatch_risk_alert(
         dashboard_url: Public dashboard URL appended to the message.
         now: Current UTC timestamp. Defaults to ``None`` (uses ``datetime.now``).
         source: Alert channel identifier. Defaults to ``line_notify``.
+        delivery_repository: Audit repository for delivery records. Defaults to
+            ``None`` (no logging).
 
     Returns:
         The :class:`AlertDecision` describing whether an alert was sent.
@@ -278,6 +328,15 @@ async def dispatch_risk_alert(
 
     if not decision.should_send:
         logger.info("LINE alert suppressed: %s", decision.reason)
+        await _log_delivery(
+            delivery_repository=delivery_repository,
+            channel="line",
+            risk_level=current_level,
+            alerted_at=evaluated_at,
+            outcome=DeliveryOutcome.SKIPPED_COOLDOWN,
+            state=state,
+            decision_reason=decision.reason,
+        )
         return decision
 
     if not token:
@@ -285,22 +344,59 @@ async def dispatch_risk_alert(
             "LINE alert would fire (%s) but LINE_NOTIFY_TOKEN is empty; skipping send",
             decision.reason,
         )
-        return AlertDecision(
+        final_decision = AlertDecision(
             should_send=False,
             reason=f"token unset; would have sent ({decision.reason})",
         )
+        await _log_delivery(
+            delivery_repository=delivery_repository,
+            channel="line",
+            risk_level=current_level,
+            alerted_at=evaluated_at,
+            outcome=DeliveryOutcome.SKIPPED_NO_TOKEN,
+            state=state,
+            decision_reason=final_decision.reason,
+        )
+        return final_decision
 
     message = format_alert_message(
         level=current_level,
         valid_at=valid_at,
         dashboard_url=dashboard_url,
     )
-    status = await send_line_notify(token, message)
-    logger.info("LINE alert sent: %s (http %s)", decision.reason, status)
+    error_detail: str | None = None
+    send_outcome = DeliveryOutcome.SENT
+    try:
+        http_status = await send_line_notify(token, message)
+        logger.info("LINE alert sent: %s (http %s)", decision.reason, http_status)
+    except Exception as exc:
+        error_detail = str(exc)
+        send_outcome = DeliveryOutcome.FAILED
+        logger.warning("LINE alert send failed: %s", exc, exc_info=True)
+        await _log_delivery(
+            delivery_repository=delivery_repository,
+            channel="line",
+            risk_level=current_level,
+            alerted_at=evaluated_at,
+            outcome=send_outcome,
+            state=state,
+            decision_reason=decision.reason,
+            error_detail=error_detail,
+        )
+        return decision
 
     await write_alert_state(
         database,
         AlertState(source=source, last_risk_level=current_level, alerted_at=evaluated_at),
+    )
+    await _log_delivery(
+        delivery_repository=delivery_repository,
+        channel="line",
+        risk_level=current_level,
+        alerted_at=evaluated_at,
+        outcome=send_outcome,
+        state=state,
+        decision_reason=decision.reason,
     )
     return decision
 
@@ -418,6 +514,7 @@ async def dispatch_web_push_alert(
     cooldown_hours: int,
     dashboard_url: str,
     now: datetime | None = None,
+    delivery_repository: DeliveryRepository | None = None,
 ) -> AlertDecision:
     """Evaluate the alert rule and broadcast a Web Push to all subscribers.
 
@@ -427,7 +524,8 @@ async def dispatch_web_push_alert(
     ``vapid_config.private_key`` short-circuits to a logged warning so
     non-production environments never error. State is only persisted after at
     least one successful send so a transient delivery failure is retried on the
-    next run.
+    next run. Every evaluation outcome is written to ``delivery_repository`` when
+    provided.
 
     Args:
         database: Motor database holding the ``alert_state`` collection.
@@ -439,6 +537,8 @@ async def dispatch_web_push_alert(
         cooldown_hours: Minimum hours between alerts for an unchanged level.
         dashboard_url: Public dashboard URL opened from the notification.
         now: Current UTC timestamp. Defaults to ``None`` (uses ``datetime.now``).
+        delivery_repository: Audit repository for delivery records. Defaults to
+            ``None`` (no logging).
 
     Returns:
         The :class:`AlertDecision` describing whether a broadcast was sent.
@@ -454,6 +554,15 @@ async def dispatch_web_push_alert(
 
     if not decision.should_send:
         logger.info("Web Push alert suppressed: %s", decision.reason)
+        await _log_delivery(
+            delivery_repository=delivery_repository,
+            channel="web_push",
+            risk_level=current_level,
+            alerted_at=evaluated_at,
+            outcome=DeliveryOutcome.SKIPPED_COOLDOWN,
+            state=state,
+            decision_reason=decision.reason,
+        )
         return decision
 
     if not vapid_config.private_key:
@@ -461,10 +570,20 @@ async def dispatch_web_push_alert(
             "Web Push alert would fire (%s) but VAPID_PRIVATE_KEY is empty; skipping send",
             decision.reason,
         )
-        return AlertDecision(
+        final_decision = AlertDecision(
             should_send=False,
             reason=f"vapid key unset; would have sent ({decision.reason})",
         )
+        await _log_delivery(
+            delivery_repository=delivery_repository,
+            channel="web_push",
+            risk_level=current_level,
+            alerted_at=evaluated_at,
+            outcome=DeliveryOutcome.SKIPPED_NO_TOKEN,
+            state=state,
+            decision_reason=final_decision.reason,
+        )
+        return final_decision
 
     subscriptions = await repository.list_subscriptions()
     payload = build_web_push_payload(
@@ -483,5 +602,14 @@ async def dispatch_web_push_alert(
     await write_alert_state(
         database,
         AlertState(source=WEB_PUSH_SOURCE, last_risk_level=current_level, alerted_at=evaluated_at),
+    )
+    await _log_delivery(
+        delivery_repository=delivery_repository,
+        channel="web_push",
+        risk_level=current_level,
+        alerted_at=evaluated_at,
+        outcome=DeliveryOutcome.SENT,
+        state=state,
+        decision_reason=decision.reason,
     )
     return decision
