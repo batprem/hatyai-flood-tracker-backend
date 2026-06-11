@@ -204,6 +204,39 @@ class Settings(BaseSettings):
             "rejects every request so a misconfigured deploy cannot be triggered."
         ),
     )
+    reports_moderation_token: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "HFT_REPORTS_MODERATION_TOKEN", "REPORTS_MODERATION_TOKEN"
+        ),
+        description=(
+            "Bearer token protecting the citizen-report moderation endpoints "
+            "(list pending, approve, reject). When empty every moderation request "
+            "is rejected, mirroring ALERTS_TEST_TOKEN, so a misconfigured deploy "
+            "cannot expose moderation."
+        ),
+    )
+    reports_rate_limit_per_hour: int = Field(
+        default=5,
+        ge=1,
+        validation_alias=AliasChoices(
+            "HFT_REPORTS_RATE_LIMIT_PER_HOUR", "REPORTS_RATE_LIMIT_PER_HOUR"
+        ),
+        description=(
+            "Maximum citizen reports a single submitter IP may file per rolling "
+            "hour. Enforced with a Mongo-backed counter keyed on a salted hash of "
+            "the IP; the raw IP is never persisted."
+        ),
+    )
+    reports_ip_hash_salt: str = Field(
+        default="hatyai-flood-reports",
+        validation_alias=AliasChoices("HFT_REPORTS_IP_HASH_SALT", "REPORTS_IP_HASH_SALT"),
+        description=(
+            "Salt mixed into the SHA-256 hash of the submitter IP used as the "
+            "rate-limit key. Set a deployment-specific value so rate-limit keys "
+            "cannot be precomputed. The raw IP is never stored."
+        ),
+    )
     vapid_private_key: str = Field(
         default="",
         validation_alias=AliasChoices("HFT_VAPID_PRIVATE_KEY", "VAPID_PRIVATE_KEY"),

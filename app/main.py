@@ -10,6 +10,11 @@ from app.api.health import router as health_router
 from app.api.routes import api_router
 from app.core.config import ForecastRepositoryBackend, Settings, get_settings
 from app.ingestion.mongo_repository import MongoForecastRepository, build_mongo_repository
+from app.ingestion.report_repository import (
+    DryRunReportRepository,
+    ReportRepository,
+    build_mongo_report_repository,
+)
 from app.ingestion.repository import DryRunForecastRepository, ForecastRepository
 from app.ingestion.station_repository import (
     DryRunStationRepository,
@@ -25,6 +30,11 @@ from app.ingestion.subscription_repository import (
 from app.ingestion.thaiwater_client import (
     ThaiwaterStationClient,
     build_thaiwater_client,
+)
+from app.services.photo_storage import (
+    InMemoryPhotoStorage,
+    PhotoStorage,
+    build_gridfs_photo_storage,
 )
 
 
@@ -42,6 +52,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     repository_already_set = hasattr(app.state, "forecast_repository")
     station_repository_already_set = hasattr(app.state, "station_repository")
     subscription_repository_already_set = hasattr(app.state, "subscription_repository")
+    report_repository_already_set = hasattr(app.state, "report_repository")
+    photo_storage_already_set = hasattr(app.state, "photo_storage")
     thaiwater_client_already_set = hasattr(app.state, "thaiwater_client")
     thaiwater_http_already_set = hasattr(app.state, "thaiwater_http")
     mongo_client: AsyncIOMotorClient | None = getattr(app.state, "mongo_client", None)
@@ -94,6 +106,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         else:
             app.state.subscription_repository = DryRunSubscriptionRepository()
 
+    if not report_repository_already_set:
+        if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
+            if mongo_client is None:
+                mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
+                app.state.mongo_client = mongo_client
+            report_repo: ReportRepository = build_mongo_report_repository(
+                mongo_client, settings.mongodb_database
+            )
+            await report_repo.ensure_indexes()
+            app.state.report_repository = report_repo
+        else:
+            app.state.report_repository = DryRunReportRepository()
+
+    if not photo_storage_already_set:
+        if settings.forecast_repository_backend is ForecastRepositoryBackend.MONGO:
+            if mongo_client is None:
+                mongo_client = AsyncIOMotorClient(settings.mongodb_uri)
+                app.state.mongo_client = mongo_client
+            app.state.photo_storage = build_gridfs_photo_storage(
+                mongo_client, settings.mongodb_database
+            )
+        else:
+            app.state.photo_storage = InMemoryPhotoStorage()
+
     if not thaiwater_client_already_set:
         if not thaiwater_http_already_set:
             app.state.thaiwater_http = httpx.AsyncClient(
@@ -125,6 +161,8 @@ def create_app(
     forecast_repository: ForecastRepository | None = None,
     station_repository: StationObservationRepository | None = None,
     subscription_repository: SubscriptionRepository | None = None,
+    report_repository: ReportRepository | None = None,
+    photo_storage: PhotoStorage | None = None,
     thaiwater_client: ThaiwaterStationClient | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
@@ -135,6 +173,8 @@ def create_app(
         station_repository: Station repository. Defaults to ``None``.
         subscription_repository: Web Push subscription repository. Defaults to
             ``None``.
+        report_repository: Citizen-report repository. Defaults to ``None``.
+        photo_storage: Report photo storage backend. Defaults to ``None``.
         thaiwater_client: ThaiWater client. Defaults to ``None``.
 
     Returns:
@@ -165,6 +205,14 @@ def create_app(
         app.state.subscription_repository = subscription_repository
     elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
         app.state.subscription_repository = DryRunSubscriptionRepository()
+    if report_repository is not None:
+        app.state.report_repository = report_repository
+    elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
+        app.state.report_repository = DryRunReportRepository()
+    if photo_storage is not None:
+        app.state.photo_storage = photo_storage
+    elif resolved_settings.forecast_repository_backend is ForecastRepositoryBackend.DRY_RUN:
+        app.state.photo_storage = InMemoryPhotoStorage()
     if thaiwater_client is not None:
         app.state.thaiwater_client = thaiwater_client
 

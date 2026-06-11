@@ -131,6 +131,57 @@ lands, the app uses an in-memory `DryRunForecastRepository`; ingest fixture fram
 `app.ingestion.forecast_cli` (or call `run_dry_ingestion(..., repository=...)` from a startup
 job) so that `GET /api/forecast/frames` returns data.
 
+### Citizen flood reports (HFT-73)
+
+Public, privacy-minimal crowd reports of observed flooding.
+
+- `POST /api/reports` — submit a report. Accepts either `multipart/form-data`
+  (`longitude`, `latitude`, `water_depth`, optional `note`, optional `photo`
+  file) or a JSON body (`{longitude, latitude, water_depth, note}`). The
+  location must be inside or near the U-Tapao basin (validated against the
+  committed basin polygon with a small ~0.05° buffer for urban edges).
+  `water_depth` is one of `ankle | knee | waist | above_waist`. Submissions are
+  rate-limited per IP (default 5/hour). A new report is `pending` and is not
+  publicly visible until approved. Returns `201` with `{id, status, has_photo,
+  created_at}`.
+- `GET /api/reports` — list **approved** reports only, newest first (`limit`
+  query param, capped). Each report carries a relative `photo_url` when a photo
+  is attached. Returns `{reports: [...], count}`.
+- `GET /api/reports/{id}/photo` — stream an **approved** report's photo.
+- Moderation (bearer-token protected via `REPORTS_MODERATION_TOKEN`, empty token
+  rejects every request like `ALERTS_TEST_TOKEN`):
+  - `GET /api/reports/moderation/pending` — list pending reports.
+  - `GET /api/reports/moderation/{id}/photo` — view any report's photo.
+  - `POST /api/reports/moderation/{id}/approve` — approve (becomes public).
+  - `POST /api/reports/moderation/{id}/reject` — reject (stays hidden).
+
+Photos are stored in MongoDB GridFS behind a small `PhotoStorage` interface
+(`app/services/photo_storage.py`) so a GCS signed-URL backend can swap in later
+without touching the report logic. In dry-run mode an in-memory storage backs
+the same path.
+
+#### PDPA / privacy note
+
+This feature is designed for Thailand's PDPA data-minimization principle.
+
+- **Collected and stored:** approximate flooding location (lon/lat), a coarse
+  body-relative water-depth category, an optional free-text note (length-capped,
+  no personal data requested), an optional photo, the moderation status, and a
+  UTC submission timestamp.
+- **Never collected:** no name, phone number, email, account, or any other
+  personal identifier. The submission form does not ask for them.
+- **Photos are sanitized:** every uploaded photo is fully re-encoded with Pillow
+  before storage, which strips **all** EXIF metadata — including any embedded
+  **GPS coordinates** that phones add by default. The original bytes are never
+  persisted.
+- **Submitter IP is transient:** the IP is used only to key the per-IP rate
+  limiter, and only as a **salted SHA-256 hash** (`REPORTS_IP_HASH_SALT`); it is
+  never written to a report document and cannot be recovered from the stored
+  rate-limit counter, which itself expires automatically via a TTL index.
+- **Moderation before exposure:** reports are hidden until a human moderator
+  approves them, so accidental personal content in a note or photo can be
+  rejected before it is ever public.
+
 ### Tests
 
 ```bash
