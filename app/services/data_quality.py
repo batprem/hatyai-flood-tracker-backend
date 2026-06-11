@@ -27,6 +27,13 @@ from app.core.config import Settings
 from app.ingestion.models import ForecastProvider, ForecastRunStatus, FreshnessStatus
 from app.ingestion.repository import ForecastRepository, MongoDocument
 from app.ingestion.station_repository import StationObservationRepository
+from app.services.ops_notifier import (
+    LoggingOpsNotifier,
+    OpsEvent,
+    OpsEventKind,
+    OpsNotifier,
+    PipelineName,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,18 @@ GFS_PROVIDER = ForecastProvider.GFS.value
 ECMWF_PROVIDER = ForecastProvider.ECMWF_OPEN_DATA.value
 
 STALE_DATA_ALERT_EVENT = "data_quality_stale_alert"
+
+_SOURCE_TO_PIPELINE: dict[str, PipelineName] = {
+    GFS_PROVIDER: PipelineName.GFS,
+    ECMWF_PROVIDER: PipelineName.ECMWF,
+    "station": PipelineName.STATIONS,
+}
+
+_STATUS_TO_EVENT_KIND: dict[FreshnessStatus, OpsEventKind] = {
+    FreshnessStatus.FAILED: OpsEventKind.INGESTION_FAILURE,
+    FreshnessStatus.PARTIAL: OpsEventKind.INGESTION_PARTIAL,
+    FreshnessStatus.STALE: OpsEventKind.STALENESS_BREACH,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +64,7 @@ class SourceQuality:
     threshold_hours: float
     status: FreshnessStatus
     reason: str | None
+    last_success_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,7 +130,9 @@ def _classify_forecast_source(
             threshold_hours=threshold_hours,
             status=FreshnessStatus.FAILED,
             reason=reason_text or "no successful run stored",
+            last_success_at=None,
         )
+    success_time = run_time if isinstance(run_time, datetime) else None
     if run_status_value == ForecastRunStatus.PARTIAL.value:
         return SourceQuality(
             source=source,
@@ -118,6 +140,7 @@ def _classify_forecast_source(
             threshold_hours=threshold_hours,
             status=FreshnessStatus.PARTIAL,
             reason=reason_text or "latest run produced partial coverage",
+            last_success_at=success_time,
         )
     if age > threshold_hours:
         return SourceQuality(
@@ -126,6 +149,7 @@ def _classify_forecast_source(
             threshold_hours=threshold_hours,
             status=FreshnessStatus.STALE,
             reason=f"latest run age {age:.1f}h exceeds {threshold_hours:.1f}h threshold",
+            last_success_at=success_time,
         )
     return SourceQuality(
         source=source,
@@ -133,6 +157,7 @@ def _classify_forecast_source(
         threshold_hours=threshold_hours,
         status=FreshnessStatus.FRESH,
         reason=None,
+        last_success_at=success_time,
     )
 
 
@@ -178,6 +203,7 @@ async def _classify_station_source(
             threshold_hours=threshold_hours,
             status=FreshnessStatus.STALE,
             reason=f"newest observation age {age:.1f}h exceeds {threshold_hours:.1f}h threshold",
+            last_success_at=newest,
         )
     return SourceQuality(
         source="station",
@@ -185,6 +211,7 @@ async def _classify_station_source(
         threshold_hours=threshold_hours,
         status=FreshnessStatus.FRESH,
         reason=None,
+        last_success_at=newest,
     )
 
 
@@ -243,10 +270,14 @@ async def compute_data_quality(
 def emit_stale_data_alert(snapshot: DataQualitySnapshot) -> bool:
     """Emit one structured ERROR log line per breaching source for log-based alerting.
 
-    Phase 2 alerting is log-based only (no PagerDuty/email/LINE): each source
-    whose status is ``stale``, ``partial``, or ``failed`` produces a single
-    ``logging.error`` line whose message is a JSON object so it is queryable in
-    the Railway log stream (for example ``event:"data_quality_stale_alert"``).
+    Phase 2 legacy path: each source whose status is ``stale``, ``partial``,
+    or ``failed`` produces a single ``logging.error`` line whose message is a
+    JSON object so it is queryable in the Railway log stream (for example
+    ``event:"data_quality_stale_alert"``). Since Phase 4 (HFT-75) the
+    scheduler's :func:`evaluate_and_alert` dispatches through the
+    :class:`~app.services.ops_notifier.OpsNotifier` interface instead
+    (``event:"ops_pipeline_alert"``); this function remains for callers that
+    still want the legacy event name.
 
     Args:
         snapshot: The computed data-quality snapshot to evaluate.
@@ -275,23 +306,88 @@ def emit_stale_data_alert(snapshot: DataQualitySnapshot) -> bool:
     return bool(breaching)
 
 
+def ops_events_from_snapshot(snapshot: DataQualitySnapshot) -> list[OpsEvent]:
+    """Map a data-quality snapshot's breaching sources to typed ops events.
+
+    Each source whose freshness status breaches its threshold (``failed``,
+    ``partial``, or ``stale``) produces one :class:`OpsEvent` whose ``kind``
+    distinguishes an ingestion failure from a staleness breach so downstream
+    delivery channels (HFT-81 LINE ops channel) can route or rate-limit by
+    condition.
+
+    Args:
+        snapshot: The computed data-quality snapshot to evaluate.
+
+    Returns:
+        One ops event per breaching source, in GFS, ECMWF, station order; empty
+        when every source is fresh.
+    """
+    events: list[OpsEvent] = []
+    for source in snapshot.stale_or_failed():
+        kind = _STATUS_TO_EVENT_KIND.get(source.status)
+        pipeline = _SOURCE_TO_PIPELINE.get(source.source)
+        if kind is None or pipeline is None:  # pragma: no cover - defensive
+            continue
+        events.append(
+            OpsEvent(
+                kind=kind,
+                pipeline=pipeline,
+                status=source.status.value,
+                age_hours=source.age_hours,
+                threshold_hours=source.threshold_hours,
+                reason=source.reason,
+                detected_at=snapshot.evaluated_at,
+            )
+        )
+    return events
+
+
+async def dispatch_ops_alerts(
+    snapshot: DataQualitySnapshot,
+    notifier: OpsNotifier,
+) -> list[OpsEvent]:
+    """Dispatch every breaching source in the snapshot to the ops notifier.
+
+    Args:
+        snapshot: The computed data-quality snapshot to evaluate.
+        notifier: Ops notifier that delivers each detected event.
+
+    Returns:
+        The ops events that were dispatched; empty when every source is fresh.
+    """
+    events = ops_events_from_snapshot(snapshot)
+    for event in events:
+        await notifier.notify(event)
+    return events
+
+
 async def evaluate_and_alert(
     forecast_repository: ForecastRepository,
     station_repository: StationObservationRepository | None,
     settings: Settings,
     *,
     now: datetime | None = None,
+    notifier: OpsNotifier | None = None,
 ) -> DataQualitySnapshot:
-    """Compute data quality and emit stale-data alerts in one scheduler-friendly call.
+    """Compute data quality and dispatch ops alerts in one scheduler-friendly call.
+
+    Breaching sources are handed to the ops notifier interface; with the
+    default :class:`LoggingOpsNotifier` each event becomes one structured
+    ERROR log line (``event:"ops_pipeline_alert"``) queryable in the Railway
+    log stream. HFT-81 swaps in a LINE-backed notifier without changing this
+    detection path.
 
     Args:
         forecast_repository: Repository providing forecast-run freshness summaries.
         station_repository: Station observation repository, or ``None`` when unconfigured.
         settings: Application settings carrying the per-source freshness thresholds.
         now: Reference time for age computation. Defaults to ``datetime.now(UTC)``.
+        notifier: Ops notifier receiving detected events. Defaults to ``None``,
+            which uses :class:`LoggingOpsNotifier`.
 
     Returns:
-        The computed data-quality snapshot, after any breaching sources have been logged.
+        The computed data-quality snapshot, after any breaching sources have
+        been dispatched to the notifier.
     """
     snapshot = await compute_data_quality(
         forecast_repository,
@@ -299,5 +395,5 @@ async def evaluate_and_alert(
         settings,
         now=now,
     )
-    emit_stale_data_alert(snapshot)
+    await dispatch_ops_alerts(snapshot, notifier if notifier is not None else LoggingOpsNotifier())
     return snapshot

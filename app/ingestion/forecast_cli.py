@@ -124,8 +124,11 @@ async def run_mongo_ingestion(
             use_fixtures=use_fixtures,
         )
         freshness = to_json_value(await repository.freshness_summary())
-        # Phase 2 log-based stale-data alerting: emit one structured ERROR log
-        # per breaching source so it is queryable in the Railway log stream.
+        # Pipeline observability (HFT-75): detect ingestion failures and
+        # staleness breaches and dispatch each one through the OpsNotifier
+        # interface. The default LoggingOpsNotifier emits one structured
+        # ERROR log per event (event:"ops_pipeline_alert") queryable in the
+        # Railway log stream; HFT-81 swaps in the LINE ops-channel notifier.
         await evaluate_and_alert(repository, station_repository, settings)
         alert_reason = await _evaluate_and_dispatch_alert(repository, settings=get_settings())
     finally:
