@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from app.api import (
     alerts,
     events,
+    export,
     forecast,
     freshness,
     map_layers,
@@ -22,3 +23,4 @@ api_router.include_router(alerts.router)
 api_router.include_router(events.router)
 api_router.include_router(shelters.router)
 api_router.include_router(reports.router)
+api_router.include_router(export.router)
