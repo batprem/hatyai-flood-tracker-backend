@@ -82,6 +82,25 @@ class StationObservationRepository(Protocol):
         """
         ...
 
+    async def list_between(
+        self,
+        *,
+        observed_from: datetime,
+        observed_to: datetime,
+        station_ids: list[str] | None = None,
+    ) -> list[StationObservation]:
+        """Return observations in a half-open ``observed_at`` time range.
+
+        Args:
+            observed_from: Inclusive lower bound on ``observed_at`` (UTC).
+            observed_to: Exclusive upper bound on ``observed_at`` (UTC).
+            station_ids: Filter to specific stations. Defaults to ``None``.
+
+        Returns:
+            Matching observations sorted by ``(station_id, observed_at)``.
+        """
+        ...
+
 
 class DryRunStationRepository:
     """Keep station observations in memory.
@@ -127,6 +146,32 @@ class DryRunStationRepository:
             if existing is None or record.observed_at > existing.observed_at:
                 latest[record.station_id] = record
         return sorted(latest.values(), key=lambda obs: obs.station_id)
+
+    async def list_between(
+        self,
+        *,
+        observed_from: datetime,
+        observed_to: datetime,
+        station_ids: list[str] | None = None,
+    ) -> list[StationObservation]:
+        """Return in-memory observations in a half-open ``observed_at`` range.
+
+        Args:
+            observed_from: Inclusive lower bound on ``observed_at`` (UTC).
+            observed_to: Exclusive upper bound on ``observed_at`` (UTC).
+            station_ids: Filter to specific stations. Defaults to ``None``.
+
+        Returns:
+            Matching observations sorted by ``(station_id, observed_at)``.
+        """
+        selected = [
+            record
+            for record in self._records.values()
+            if observed_from <= record.observed_at < observed_to
+            and (station_ids is None or record.station_id in station_ids)
+        ]
+        selected.sort(key=lambda obs: (obs.station_id, obs.observed_at))
+        return selected
 
 
 class MongoStationRepository:
@@ -232,6 +277,39 @@ class MongoStationRepository:
             ]
         )
         cursor = self._collection.aggregate(pipeline)
+        results: list[StationObservation] = []
+        async for document in cursor:
+            results.append(_document_to_observation(document))
+        return results
+
+    async def list_between(
+        self,
+        *,
+        observed_from: datetime,
+        observed_to: datetime,
+        station_ids: list[str] | None = None,
+    ) -> list[StationObservation]:
+        """Return stored observations in a half-open ``observed_at`` range.
+
+        Served by the time-series collection's time field plus the
+        ``(station_id, observed_at)`` compound index.
+
+        Args:
+            observed_from: Inclusive lower bound on ``observed_at`` (UTC).
+            observed_to: Exclusive upper bound on ``observed_at`` (UTC).
+            station_ids: Filter to specific stations. Defaults to ``None``.
+
+        Returns:
+            Matching observations sorted by ``(station_id, observed_at)``.
+        """
+        query: dict[str, object] = {
+            STATION_TIME_FIELD: {"$gte": observed_from, "$lt": observed_to},
+        }
+        if station_ids is not None:
+            query[STATION_METADATA_FIELD] = {"$in": station_ids}
+        cursor = self._collection.find(query).sort(
+            [(STATION_METADATA_FIELD, ASCENDING), (STATION_TIME_FIELD, ASCENDING)]
+        )
         results: list[StationObservation] = []
         async for document in cursor:
             results.append(_document_to_observation(document))
