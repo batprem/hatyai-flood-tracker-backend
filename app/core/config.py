@@ -173,11 +173,17 @@ class Settings(BaseSettings):
     )
     line_notify_token: str = Field(
         default="",
-        validation_alias=AliasChoices("HFT_LINE_NOTIFY_TOKEN", "LINE_NOTIFY_TOKEN"),
+        validation_alias=AliasChoices(
+            "HFT_LINE_MESSAGING_API_TOKEN",
+            "LINE_MESSAGING_API_TOKEN",
+            "HFT_LINE_NOTIFY_TOKEN",
+            "LINE_NOTIFY_TOKEN",
+        ),
         description=(
-            "LINE Notify channel access token used to push flood alerts. When empty the "
-            "alert dispatcher logs a warning and skips sending so non-production "
-            "environments do not error. Never commit a real token to source."
+            "LINE Messaging API channel access token used to broadcast flood alerts. "
+            "Accepts the legacy LINE_NOTIFY_TOKEN alias for backward compatibility. "
+            "When empty the alert dispatcher logs a warning and skips sending so "
+            "non-production environments do not error. Never commit a real token to source."
         ),
     )
     line_notify_cooldown_hours: int = Field(
@@ -206,9 +212,7 @@ class Settings(BaseSettings):
     )
     reports_moderation_token: str = Field(
         default="",
-        validation_alias=AliasChoices(
-            "HFT_REPORTS_MODERATION_TOKEN", "REPORTS_MODERATION_TOKEN"
-        ),
+        validation_alias=AliasChoices("HFT_REPORTS_MODERATION_TOKEN", "REPORTS_MODERATION_TOKEN"),
         description=(
             "Bearer token protecting the citizen-report moderation endpoints "
             "(list pending, approve, reject). When empty every moderation request "
