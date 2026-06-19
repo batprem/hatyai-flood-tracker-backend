@@ -3,6 +3,7 @@
 import json
 import unittest
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -26,6 +27,7 @@ from app.services.data_quality import (
 )
 from app.services.ops_notifier import (
     OPS_ALERT_EVENT,
+    LineOpsNotifier,
     LoggingOpsNotifier,
     OpsEvent,
     OpsEventKind,
@@ -183,6 +185,77 @@ class LoggingOpsNotifierTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(item["event"] == OPS_ALERT_EVENT for item in events))
         pipelines = {item["pipeline"] for item in events}
         self.assertEqual(pipelines, {"gfs", "ecmwf", "stations"})
+
+
+def _make_staleness_event(age_hours: float | None = 9.0) -> OpsEvent:
+    return OpsEvent(
+        kind=OpsEventKind.STALENESS_BREACH,
+        pipeline=PipelineName.GFS,
+        status="stale",
+        age_hours=age_hours,
+        threshold_hours=6.0,
+        reason="latest run age 9.0h exceeds 6.0h threshold",
+        detected_at=datetime(2026, 5, 1, 18, 0, tzinfo=UTC),
+    )
+
+
+class LineOpsNotifierTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sends_to_line_when_token_set(self) -> None:
+        """When token is non-empty, send_line_notify is called once with event details."""
+        event = _make_staleness_event()
+        notifier = LineOpsNotifier("ops-secret-token")
+
+        with patch(
+            "app.services.ops_notifier.send_line_notify", new_callable=AsyncMock
+        ) as mock_send:
+            with self.assertLogs("app.services.ops_notifier", level="ERROR"):
+                await notifier.notify(event)
+
+        mock_send.assert_awaited_once()
+        call_args = mock_send.call_args
+        token_arg, message_arg = call_args.args
+        self.assertEqual(token_arg, "ops-secret-token")
+        self.assertIn("staleness_breach", message_arg)
+        self.assertIn("gfs", message_arg)
+
+    async def test_skips_line_when_token_empty(self) -> None:
+        """When token is empty, send_line_notify is not called and a warning is logged."""
+        event = _make_staleness_event()
+        notifier = LineOpsNotifier("")
+
+        with patch(
+            "app.services.ops_notifier.send_line_notify", new_callable=AsyncMock
+        ) as mock_send:
+            with self.assertLogs("app.services.ops_notifier", level="WARNING") as captured:
+                await notifier.notify(event)
+
+        mock_send.assert_not_awaited()
+        warning_messages = [r.message for r in captured.records if r.levelname == "WARNING"]
+        self.assertTrue(
+            any("empty" in msg.lower() or "skipping" in msg.lower() for msg in warning_messages)
+        )
+
+    async def test_always_logs_structured_json(self) -> None:
+        """LoggingOpsNotifier still emits a structured JSON ERROR even when LINE is sent."""
+        event = _make_staleness_event()
+        notifier = LineOpsNotifier("ops-secret-token")
+
+        with patch("app.services.ops_notifier.send_line_notify", new_callable=AsyncMock):
+            with self.assertLogs("app.services.ops_notifier", level="ERROR") as captured:
+                await notifier.notify(event)
+
+        error_records = [r for r in captured.records if r.levelname == "ERROR"]
+        self.assertEqual(len(error_records), 1)
+        payload = json.loads(error_records[0].message)
+        self.assertEqual(payload["event"], OPS_ALERT_EVENT)
+        self.assertEqual(payload["kind"], "staleness_breach")
+        self.assertEqual(payload["pipeline"], "gfs")
+
+    async def test_ops_token_independent_of_public_token(self) -> None:
+        """Settings keeps ops and public LINE tokens in separate fields."""
+        settings = Settings(LINE_OPS_TOKEN="ops-tok", LINE_NOTIFY_TOKEN="pub-tok")
+        self.assertEqual(settings.line_ops_token, "ops-tok")
+        self.assertEqual(settings.line_notify_token, "pub-tok")
 
 
 class HealthPipelinesBlockTests(unittest.IsolatedAsyncioTestCase):

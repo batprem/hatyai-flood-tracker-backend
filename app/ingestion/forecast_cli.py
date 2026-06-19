@@ -29,6 +29,7 @@ from app.ingestion.subscription_repository import build_mongo_subscription_repos
 from app.services.alert_dispatch import dispatch_risk_alert, dispatch_web_push_alert
 from app.services.data_quality import evaluate_and_alert
 from app.services.forecast_frames import DEFAULT_AREA_NAME
+from app.services.ops_notifier import LineOpsNotifier
 from app.services.risk_rules import (
     build_rainfall_inputs_from_frames,
     calculate_current_risk,
@@ -126,10 +127,14 @@ async def run_mongo_ingestion(
         freshness = to_json_value(await repository.freshness_summary())
         # Pipeline observability (HFT-75): detect ingestion failures and
         # staleness breaches and dispatch each one through the OpsNotifier
-        # interface. The default LoggingOpsNotifier emits one structured
-        # ERROR log per event (event:"ops_pipeline_alert") queryable in the
-        # Railway log stream; HFT-81 swaps in the LINE ops-channel notifier.
-        await evaluate_and_alert(repository, station_repository, settings)
+        # interface. LineOpsNotifier (HFT-81) logs structured JSON and also
+        # broadcasts to the LINE ops channel when a token is configured.
+        await evaluate_and_alert(
+            repository,
+            station_repository,
+            settings,
+            notifier=LineOpsNotifier(settings.line_ops_token),
+        )
         alert_reason = await _evaluate_and_dispatch_alert(repository, settings=get_settings())
     finally:
         client.close()

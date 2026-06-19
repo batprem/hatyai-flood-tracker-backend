@@ -8,8 +8,8 @@ interface that decouples *detection* from *delivery*:
 - Phase 4 ships :class:`LoggingOpsNotifier`, which emits one structured JSON
   ``ERROR`` log line per event so alerts are queryable in the Railway log
   stream (``event:"ops_pipeline_alert"``).
-- HFT-81 (LINE Notification Platform epic) will plug a LINE-backed
-  implementation into the same interface; detection code does not change.
+- HFT-81 adds :class:`LineOpsNotifier`, which wraps :class:`LoggingOpsNotifier`
+  and also broadcasts to the LINE ops channel via the Messaging API.
 """
 
 from __future__ import annotations
@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
+
+from app.services.line_notify import send_line_notify
 
 logger = logging.getLogger(__name__)
 
@@ -98,3 +100,46 @@ class LoggingOpsNotifier:
                 sort_keys=True,
             )
         )
+
+
+def _format_ops_message(event: OpsEvent) -> str:
+    lines = [
+        f"[HFT OPS] {event.kind.value} on {event.pipeline.value}",
+        f"Status: {event.status} | Age: {round(event.age_hours, 1)}h (threshold: {event.threshold_hours}h)"
+        if event.age_hours is not None
+        else f"Status: {event.status} | Threshold: {event.threshold_hours}h",
+    ]
+    if event.reason is not None:
+        lines.append(f"Reason: {event.reason}")
+    return "\n".join(lines)
+
+
+class LineOpsNotifier:
+    """Deliver ops events to a LINE ops channel AND log them as structured JSON.
+
+    Wraps :class:`LoggingOpsNotifier` so structured logs are always emitted.
+    When ``token`` is non-empty the event is also broadcast to the LINE ops
+    channel via the Messaging API. When ``token`` is empty LINE delivery is
+    skipped and a warning is logged — matching the behaviour of the public
+    alert channel.
+    """
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+        self._logging_notifier = LoggingOpsNotifier()
+
+    async def notify(self, event: OpsEvent) -> None:
+        """Log the ops event as structured JSON and optionally broadcast to LINE.
+
+        Args:
+            event: The detected pipeline condition to deliver.
+        """
+        await self._logging_notifier.notify(event)
+        if not self._token:
+            logger.warning(
+                "LINE ops token is empty; skipping LINE delivery for %s on %s",
+                event.kind.value,
+                event.pipeline.value,
+            )
+            return
+        await send_line_notify(self._token, _format_ops_message(event))

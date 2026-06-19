@@ -186,6 +186,15 @@ class Settings(BaseSettings):
             "non-production environments do not error. Never commit a real token to source."
         ),
     )
+    line_ops_token: str = Field(
+        default="",
+        validation_alias=AliasChoices("HFT_LINE_OPS_TOKEN", "LINE_OPS_TOKEN"),
+        description=(
+            "LINE Messaging API channel access token for the operator alert channel. "
+            "Separate from the public channel token so ops noise never reaches the public. "
+            "When empty LINE ops delivery is skipped and a warning is logged."
+        ),
+    )
     line_notify_cooldown_hours: int = Field(
         default=3,
         ge=0,
