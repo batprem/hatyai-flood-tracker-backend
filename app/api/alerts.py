@@ -21,7 +21,7 @@ from app.schemas.push_subscription import (
     VapidPublicKeyResponse,
 )
 from app.services.alert_dispatch import format_alert_message
-from app.services.line_notify import send_line_notify
+from app.services.line_messaging import send_line_notify
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 

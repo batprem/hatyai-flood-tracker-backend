@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 
-from app.services.line_notify import send_line_notify
+from app.services.line_messaging import send_line_notify
 
 logger = logging.getLogger(__name__)
 

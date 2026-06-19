@@ -24,7 +24,7 @@ from pydantic import BaseModel, Field, JsonValue
 from app.ingestion.delivery_repository import DeliveryOutcome
 from app.schemas.alert_delivery import AlertDelivery
 from app.schemas.common import RiskLevel
-from app.services.line_notify import send_line_notify
+from app.services.line_messaging import send_line_notify
 from app.services.web_push import VapidConfig, send_web_push
 
 if TYPE_CHECKING:
