@@ -105,7 +105,8 @@ class LoggingOpsNotifier:
 def _format_ops_message(event: OpsEvent) -> str:
     lines = [
         f"[HFT OPS] {event.kind.value} on {event.pipeline.value}",
-        f"Status: {event.status} | Age: {round(event.age_hours, 1)}h (threshold: {event.threshold_hours}h)"
+        f"Status: {event.status} | Age: {round(event.age_hours, 1)}h"
+        f" (threshold: {event.threshold_hours}h)"
         if event.age_hours is not None
         else f"Status: {event.status} | Threshold: {event.threshold_hours}h",
     ]
