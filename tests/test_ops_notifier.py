@@ -253,7 +253,7 @@ class LineOpsNotifierTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_ops_token_independent_of_public_token(self) -> None:
         """Settings keeps ops and public LINE tokens in separate fields."""
-        settings = Settings(LINE_OPS_TOKEN="ops-tok", LINE_NOTIFY_TOKEN="pub-tok")
+        settings = Settings.model_validate({"LINE_OPS_TOKEN": "ops-tok", "LINE_NOTIFY_TOKEN": "pub-tok"})
         self.assertEqual(settings.line_ops_token, "ops-tok")
         self.assertEqual(settings.line_notify_token, "pub-tok")
 
